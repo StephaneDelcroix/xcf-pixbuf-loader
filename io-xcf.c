@@ -20,6 +20,7 @@
 #include <gdk-pixbuf/gdk-pixbuf-io.h>
 #include <math.h>
 #include <string.h>
+#include <errno.h>
 
 #define LOG(...) printf (__VA_ARGS__);
 
@@ -79,6 +80,17 @@
 #define LAYERMODE_SOFTLIGHT	19
 #define LAYERMODE_GRAINEXTRACT	20
 #define LAYERMODE_GRAINMERGE	21
+
+typedef struct _XcfContext XcfContext;
+struct _XcfContext {
+	GdkPixbufModuleSizeFunc size_func;
+	GdkPixbufModulePreparedFunc prepare_func;
+	GdkPixbufModuleUpdatedFunc update_func;
+	gpointer user_data;
+
+	gchar *tempname;
+	FILE *file;
+};
 
 typedef struct _XcfChannel XcfChannel;
 struct _XcfChannel {
@@ -182,7 +194,7 @@ rle_decode (FILE *f, gchar *ptr, int count, int type)
 }
 
 static GdkPixbuf*
-xcf_image_load (FILE *f, GError **error)
+xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 {
 	guint32 width;
 	guint32 height;
@@ -433,6 +445,10 @@ xcf_image_load (FILE *f, GError **error)
 	//Compose the pixbuf
 	pixbuf = gdk_pixbuf_new (GDK_COLORSPACE_RGB, TRUE, 8, width, height);
 	LOG ("pixbuf %d %d\n", gdk_pixbuf_get_width (pixbuf), gdk_pixbuf_get_height (pixbuf));
+	LOG ("PrepareFunc\n");
+	if (context && context->prepare_func)
+		(* context->prepare_func) (pixbuf, NULL, context->user_data);
+
 	if (!pixbuf)
 		g_set_error_literal (error,
 				     GDK_PIXBUF_ERROR,
@@ -472,6 +488,10 @@ xcf_image_load (FILE *f, GError **error)
 			for (j=0; j<64;j++) {
 				memcpy (pixs + origin + j * rowstride, pixels + j*64*4 , 64*4);
 			}
+			
+			//FIXME: only update the tile region
+			if (context && context->update_func)
+				(* context->update_func) (pixbuf, 0, 0, width, height, context->user_data);
 
 
 			fseek (f, lpos, SEEK_SET);
@@ -486,6 +506,22 @@ xcf_image_load (FILE *f, GError **error)
 	return pixbuf;
 }
 
+/* Static Loader */
+
+static GdkPixbuf*
+xcf_image_load (FILE *f, GError **error)
+{
+	return xcf_image_load_real (f, NULL, error);
+}
+
+
+/* Progressive loader */
+
+/* 
+ * as the layers are packed top down in the xcf format, and we have to render them bottom-up,
+ * we need the full file loaded to start rendering
+ */
+
 static gpointer
 xcf_image_begin_load (GdkPixbufModuleSizeFunc size_func,
 		GdkPixbufModulePreparedFunc prepare_func,
@@ -493,35 +529,75 @@ xcf_image_begin_load (GdkPixbufModuleSizeFunc size_func,
 		gpointer user_data,
 		GError **error)
 {
-	g_set_error_literal (error,
-			     GDK_PIXBUF_ERROR,
-			     GDK_PIXBUF_ERROR_UNSUPPORTED_OPERATION,
-			     "Progressive loader not implemented(yet), use synchronous loader");
-	return NULL;
+	LOG ("Begin\n");
+	XcfContext *context;
+	gint fd;
+
+	context = g_new (XcfContext, 1);
+	context->size_func = size_func;
+	context->prepare_func = prepare_func;
+	context->update_func = update_func;
+	context->user_data = user_data;
+	fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &context->tempname, NULL);
+	
+	if (fd < 0) {
+		g_free (context);
+		return NULL;
+	}
+
+	context->file = fdopen (fd, "w+");
+	if (!context->file) {
+		g_free (context->tempname);
+		g_free (context);
+		return NULL;
+	}
+
+	return context;
 }
 
 static gboolean
-xcf_image_stop_load (gpointer context, GError **error)
-
+xcf_image_stop_load (gpointer data, GError **error)
 {
-	g_set_error_literal (error,
-			     GDK_PIXBUF_ERROR,
-			     GDK_PIXBUF_ERROR_UNSUPPORTED_OPERATION,
-			     "Progressive loader not implemented(yet), use synchronous loader");
-	return FALSE;
+	LOG ("Stop\n");
+	XcfContext *context = (XcfContext*) data;
+	gboolean retval = TRUE;
+
+	g_return_val_if_fail (data, TRUE);
+
+	fflush (context->file);
+	rewind (context->file);
+	GdkPixbuf *pixbuf = xcf_image_load_real (context->file, context, error);
+	if (!pixbuf)
+		retval = FALSE;
+	else
+		g_object_unref (pixbuf);
+	fclose (context->file);
+	g_unlink (context->tempname);
+	g_free (context->tempname);
+	g_free (context);
+
+	return retval;
 }
 
 static gboolean
-xcf_image_load_increment (gpointer context,
+xcf_image_load_increment (gpointer data,
 		    const guchar *buf,
 		    guint size,
 		    GError **error)
 {
-	g_set_error_literal (error,
-			     GDK_PIXBUF_ERROR,
-			     GDK_PIXBUF_ERROR_UNSUPPORTED_OPERATION,
-			     "Progressive loader not implemented(yet), use synchronous loader");
-	return FALSE;	
+	LOG ("Increment %d\n", size);
+	XcfContext *context = (XcfContext*) data;
+	g_return_val_if_fail (data, FALSE);
+
+	if (fwrite (buf, sizeof (guchar), size, context->file) != size) {
+		gint save_errno = errno;
+		g_set_error_literal (error,
+				     G_FILE_ERROR,
+				     g_file_error_from_errno (save_errno),
+				     "Failed to write to temporary file when loading Xcf image");
+		return FALSE;
+	}
+	return TRUE;	
 }
 
 
