@@ -102,8 +102,18 @@ struct _XcfLayer {
 };
 
 void
-rle_decode (FILE *f, gchar *ptr, int count, int channels)
+rle_decode (FILE *f, gchar *ptr, int count, int type)
 {
+	int channels;
+	switch (type) {
+		case 0: channels = 3; break;
+		case 1: channels = 4; break;
+		case 2: channels = 1; break;
+		case 3: channels = 2; break;
+		case 4: channels = 1; break;
+		case 5: channels = 2; break;
+	}
+
 	guchar opcode;
 	guchar buffer[3];
 	guchar ch[channels][count];
@@ -140,15 +150,35 @@ rle_decode (FILE *f, gchar *ptr, int count, int channels)
 	}
 
 	//re-interlace
-	int i, c;
+	int i;
 
 	for (i=0; i<count;i++)
-		for (c=0;c<4;c++) {
-			if (c < channels)
-				memcpy (ptr + 4*i + c, ch[c] + i, 1);
-			else
-				ptr[4*i + c] = 0xff;
-	}
+		switch (type) {
+		case 0:
+			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
+			memcpy (ptr + 4*i + 1, ch[1] + i, 1);
+			memcpy (ptr + 4*i + 2, ch[2] + i, 1);
+			ptr[4*i + 3] = 0xff;
+			break;
+		case 1:
+			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
+			memcpy (ptr + 4*i + 1, ch[1] + i, 1);
+			memcpy (ptr + 4*i + 2, ch[2] + i, 1);
+			memcpy (ptr + 4*i + 3, ch[3] + i, 1);
+			break;
+		case 2:
+			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
+			memcpy (ptr + 4*i + 1, ch[0] + i, 1);
+			memcpy (ptr + 4*i + 2, ch[0] + i, 1);	
+			ptr[4*i + 3] = 0xff;
+			break;
+		case 3:
+			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
+			memcpy (ptr + 4*i + 1, ch[0] + i, 1);
+			memcpy (ptr + 4*i + 2, ch[0] + i, 1);	
+			memcpy (ptr + 4*i + 3, ch[1] + i, 1);
+			break;
+		}
 }
 
 static GdkPixbuf*
@@ -433,22 +463,11 @@ xcf_image_load (FILE *f, GError **error)
 			long lpos = ftell (f);
 			fseek (f, tptr, SEEK_SET);
 			LOG("\tTile %d %d\n", tile_id, tptr);
-			int channels;
-			switch (layer->type) {
-				case 0: channels = 3; break;
-				case 1: channels = 4; break;
-				case 2: channels = 1; break;
-				case 3: channels = 2; break;
-				case 4: channels = 1; break;
-				case 5: channels = 2; break;
-			}
-			rle_decode (f, pixels, 64*64, channels);
+			rle_decode (f, pixels, 64*64, layer->type);
 
 			int tw = ceil ((layer->width) / 64);
-			LOG ("tw %d\n", tw);
 			int origin = 64 * 4 * (tile_id % tw) + 64 * rowstride * (tile_id/tw) ;
-			LOG ("origin %d\n", origin);
-				     //rowstride * 64 * tile_id / tw;
+
 			int j;
 			for (j=0; j<64;j++) {
 				memcpy (pixs + origin + j * rowstride, pixels + j*64*4 , 64*4);
