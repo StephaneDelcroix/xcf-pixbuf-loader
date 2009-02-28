@@ -228,6 +228,11 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 	width = SWAP(data[0]);
 	height = SWAP(data[1]);
 	color_mode = SWAP(data[2]);
+	if (color_mode == 2) { //Indexed, not supported for now
+		g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE, "Indexed color mode unsupported");
+		return NULL;
+	}
+
 
 	LOG ("W: %d, H: %d, mode: %d\n", width, height, color_mode);
 		
