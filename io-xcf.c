@@ -32,6 +32,7 @@
 
 #define PROP_END 		0
 #define PROP_COLORMAP 		1
+#define PROP_FLOATING_SELECTION	5
 #define PROP_OPACITY		6
 #define PROP_MODE		7
 #define PROP_VISIBLE		8
@@ -273,8 +274,11 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			     GDK_PIXBUF_ERROR_INSUFFICIENT_MEMORY,
 			     "Cannot allocate memory for loading XCF image");	
 
+		gboolean ignore_layer = FALSE;
+
 		layer->mode = 0;
 		layer->apply_mask = FALSE;
+		layer->layer_mask = NULL;
 		layer->dx = layer->dy = 0;
 		layer->visible = TRUE;
 		layer->opacity = 0xff;
@@ -329,6 +333,8 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 				layer->dx = SWAP(offset[0]);
 				layer->dy = SWAP(offset[1]);
 				break;
+			case PROP_FLOATING_SELECTION:
+				ignore_layer = TRUE;
 			default:
 				//skip the payload
 				fseek (f, property[1], SEEK_CUR);
@@ -354,24 +360,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		guint32 lptr;
 		fread (&lptr, sizeof(guint32), 1, f);
 		layer->lptr = SWAP (lptr);
-//		long pos2 = ftell (f);
-//		//jump to level
-//		fseek (f, lptr, SEEK_SET);
-//		//Ignore Level w and h (same as hierarchy)
-//		fseek (f, 2 * sizeof(guint32), SEEK_CUR);
-//		//Iterate on the tiles
-//		guint32 tptr;
-//		while (1) {
-//			fread (&tptr, sizeof(guint32), 1, f);
-//			if (!tptr)
-//				break;
-//			tptr = SWAP(tptr);
-//			LOG("\tTile %d\n", tptr);
-//			FIXME: compute tile size, rle decode each channel (if rle), re-interlace rgba
-//		}
-//
-//		//rewind to the hierarchy position
-//		fseek (f, pos2, SEEK_SET);
+		//Layer parsing is done at rendering time
 
 		//Here I could iterate over the unused dlevels and skip them
 
@@ -387,7 +376,13 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		fseek (f, pos, SEEK_SET);
 
 		
-		layers = g_list_prepend (layers, layer); //prepend so the layers are in a bottom-up order in the list
+		if (!ignore_layer)
+			layers = g_list_prepend (layers, layer); //prepend so the layers are in a bottom-up order in the list
+		else {
+			if (layer->layer_mask)
+				g_free(layer->layer_mask);
+			g_free (layer);
+		}
 	}
 
 	//Channels
@@ -466,6 +461,8 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 	gchar pixels[16384];
 	for (current = g_list_first (layers); current; current = g_list_next(current)) {
 		XcfLayer *layer = current->data;
+		if (!layer->visible)
+			continue;
 
 		fseek (f, layer->lptr, SEEK_SET);
 		//Ignore Level w and h (same as hierarchy)
