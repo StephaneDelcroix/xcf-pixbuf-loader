@@ -470,7 +470,8 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		int tile_id = 0;
 		guchar *pixs = gdk_pixbuf_get_pixels (pixbuf);
 		int rowstride = gdk_pixbuf_get_rowstride (pixbuf);
-		
+		int line_width = ceil ((layer->width) / 64.0);
+
 		while (1) {
 			fread (&tptr, sizeof(guint32), 1, f);
 			if (!tptr)
@@ -478,15 +479,20 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			tptr = SWAP(tptr);
 			long lpos = ftell (f);
 			fseek (f, tptr, SEEK_SET);
-			LOG("\tTile %d %d\n", tile_id, tptr);
-			rle_decode (f, pixels, 64*64, layer->type);
 
-			int tw = ceil ((layer->width) / 64);
-			int origin = 64 * 4 * (tile_id % tw) + 64 * rowstride * (tile_id/tw) ;
+			int ox = 64 * (tile_id % line_width);
+			int oy = 64 * (tile_id / line_width);
+			int tw = MIN (64, layer->width - ox);
+			int th = MIN (64, layer->height - oy);
+			LOG("\tTile %d %d (%d %d) (%d %d)\n", tile_id, tptr, ox, oy, tw, th);
+
+			rle_decode (f, pixels, tw*th, layer->type);
+
+			int origin = 4 * ox + rowstride * oy ;
 
 			int j;
-			for (j=0; j<64;j++) {
-				memcpy (pixs + origin + j * rowstride, pixels + j*64*4 , 64*4);
+			for (j=0; j<th;j++) {
+				memcpy (pixs + origin + j * rowstride, pixels + j*tw*4 , tw*4);
 			}
 			
 			//FIXME: only update the tile region
