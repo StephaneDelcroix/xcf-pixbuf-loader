@@ -119,12 +119,12 @@ rle_decode (FILE *f, gchar *ptr, int count, int type)
 {
 	int channels;
 	switch (type) {
-		case 0: channels = 3; break;
-		case 1: channels = 4; break;
-		case 2: channels = 1; break;
-		case 3: channels = 2; break;
-		case 4: channels = 1; break;
-		case 5: channels = 2; break;
+		case LAYERTYPE_RGB : channels = 3; break;
+		case LAYERTYPE_RGBA: channels = 4; break;
+		case LAYERTYPE_GRAYSCALE: channels = 1; break;
+		case LAYERTYPE_GRAYSCALEA: channels = 2; break;
+		case LAYERTYPE_INDEXED: channels = 1; break;
+		case LAYERTYPE_INDEXEDA: channels = 2; break;
 	}
 
 	guchar opcode;
@@ -162,30 +162,30 @@ rle_decode (FILE *f, gchar *ptr, int count, int type)
 		}
 	}
 
-	//re-interlace
+	//re-interlace, pad to rgba
 	int i;
 
 	for (i=0; i<count;i++)
 		switch (type) {
-		case 0:
+		case LAYERTYPE_RGB:
 			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
 			memcpy (ptr + 4*i + 1, ch[1] + i, 1);
 			memcpy (ptr + 4*i + 2, ch[2] + i, 1);
 			ptr[4*i + 3] = 0xff;
 			break;
-		case 1:
+		case LAYERTYPE_RGBA:
 			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
 			memcpy (ptr + 4*i + 1, ch[1] + i, 1);
 			memcpy (ptr + 4*i + 2, ch[2] + i, 1);
 			memcpy (ptr + 4*i + 3, ch[3] + i, 1);
 			break;
-		case 2:
+		case LAYERTYPE_GRAYSCALE:
 			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
 			memcpy (ptr + 4*i + 1, ch[0] + i, 1);
 			memcpy (ptr + 4*i + 2, ch[0] + i, 1);	
 			ptr[4*i + 3] = 0xff;
 			break;
-		case 3:
+		case LAYERTYPE_GRAYSCALEA: 
 			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
 			memcpy (ptr + 4*i + 1, ch[0] + i, 1);
 			memcpy (ptr + 4*i + 2, ch[0] + i, 1);	
