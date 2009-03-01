@@ -202,6 +202,33 @@ apply_opacity (guchar* ptr, int size, guint32 opacity)
 		ptr[4*i + 3] = (guchar)((ptr[4*i+3] * opacity) / 0xff);
 }
 
+void
+intersect_tile (guchar* ptr, int im_width, int im_height, int *ox, int *oy, int *tw, int *th)
+{
+	int i;
+	if (*ox < 0) {
+		for (i=0; i<*th; i++) {
+			memmove (ptr + 4 * i * (*tw + *ox), ptr + 4 * i * (*tw), 4 * (*tw + *ox));
+		}
+		*tw = *tw + *ox;
+		*ox = 0;
+	}
+	if (*oy < 0) {
+		memmove (ptr, ptr + 4 * *tw * -*oy, 4 * *tw * (*th + *oy));
+		*th = *th + *oy;
+		*oy = 0;
+	}
+	if (*ox + *tw > im_width) {
+		for (i=0; i<*th; i++) {
+			memmove (ptr + 4 * i * (im_width - *ox), ptr + 4 * i * (*tw), 4 * (im_width - *ox));
+		}
+		*tw = im_width - *ox;
+	}
+	if (*oy + *th > im_height) {
+		*th = im_height - *oy;
+	}
+}
+
 static GdkPixbuf*
 xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 {
@@ -493,10 +520,12 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			int oy = 64 * (tile_id / line_width);
 			int tw = MIN (64, layer->width - ox);
 			int th = MIN (64, layer->height - oy);
+			ox += layer->dx;
+			oy += layer->dy;
 			LOG("\tTile %d %d (%d %d) (%d %d)\n", tile_id, tptr, ox, oy, tw, th);
 
 			//if the tile doesn't intersect with the canvas, ignore
-			if (ox + layer->dx + tw < 0 || oy + layer->dy + th < 0 || ox + layer->dx > (int)width || oy + layer->dy > (int)height ) {
+			if (ox + tw < 0 || oy + th < 0 || ox > (int)width || oy > (int)height ) {
 				fseek (f, lpos, SEEK_SET);
 				tile_id++;
 				continue;
@@ -505,6 +534,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			rle_decode (f, pixels, tw*th, layer->type);
 
 			//reduce the tile to its intersection with the canvas
+			intersect_tile (pixels, width, height, &ox, &oy, &tw, &th);
 			
 			//apply layer opacity
 			apply_opacity (pixels, tw*th, layer->opacity);
@@ -514,16 +544,15 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 			//composite
 
-			int origin = 4 * (ox + layer->dx) + rowstride * (oy + layer->dy) ;
+			int origin = 4 * ox + rowstride * oy ;
 
 			int j;
 			for (j=0; j<th;j++) {
 				memcpy (pixs + origin + j * rowstride, pixels + j*tw*4 , tw*4);
 			}
 			
-			//FIXME: only update the tile region
 			if (context && context->update_func)
-				(* context->update_func) (pixbuf, 0, 0, width, height, context->user_data);
+				(* context->update_func) (pixbuf, ox, oy, tw, th, context->user_data);
 
 
 			fseek (f, lpos, SEEK_SET);
