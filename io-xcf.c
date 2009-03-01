@@ -308,7 +308,6 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			property[0] = SWAP (property[0]);
 			property[1] = SWAP (property[1]);
 			LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
-			gint32 offset[2];
 			switch (property[0]) {
 			case PROP_OPACITY:
 				fread (data, sizeof(guint32), 1, f);
@@ -329,9 +328,9 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 					layer->apply_mask = TRUE;
 				break;
 			case PROP_OFFSETS:
-				fread(offset, sizeof(gint32), 2, f);
-				layer->dx = SWAP(offset[0]);
-				layer->dy = SWAP(offset[1]);
+				fread(data, sizeof(gint32), 2, f);
+				layer->dx = SWAP(data[0]);
+				layer->dy = SWAP(data[1]);
 				break;
 			case PROP_FLOATING_SELECTION:
 				ignore_layer = TRUE;
@@ -490,6 +489,12 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 			rle_decode (f, pixels, tw*th, layer->type);
 
+			//reduce the tile to its intersection with the canvas
+			
+			//apply mask
+
+			//composite
+
 			int origin = 4 * (ox + layer->dx) + rowstride * (oy + layer->dy) ;
 
 			int j;
@@ -505,10 +510,6 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			fseek (f, lpos, SEEK_SET);
 			tile_id++;
 		}
-
-
-		//only rneders bg for now
-		break;
 	}
 
 	return pixbuf;
