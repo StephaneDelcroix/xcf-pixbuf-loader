@@ -194,6 +194,14 @@ rle_decode (FILE *f, gchar *ptr, int count, int type)
 		}
 }
 
+void
+apply_opacity (guchar* ptr, int size, guint32 opacity)
+{
+	int i;
+	for (i=0; i<size; i++)
+		ptr[4*i + 3] = (guchar)((ptr[4*i+3] * opacity) / 0xff);
+}
+
 static GdkPixbuf*
 xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 {
@@ -498,7 +506,11 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 			//reduce the tile to its intersection with the canvas
 			
+			//apply layer opacity
+			apply_opacity (pixels, tw*th, layer->opacity);
+
 			//apply mask
+
 
 			//composite
 
