@@ -487,6 +487,13 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			int th = MIN (64, layer->height - oy);
 			LOG("\tTile %d %d (%d %d) (%d %d)\n", tile_id, tptr, ox, oy, tw, th);
 
+			//if the tile doesn't intersect with the canvas, ignore
+			if (ox + layer->dx + tw < 0 || oy + layer->dy + th < 0 || ox + layer->dx > (int)width || oy + layer->dy > (int)height ) {
+				fseek (f, lpos, SEEK_SET);
+				tile_id++;
+				continue;
+			}
+
 			rle_decode (f, pixels, tw*th, layer->type);
 
 			//reduce the tile to its intersection with the canvas
