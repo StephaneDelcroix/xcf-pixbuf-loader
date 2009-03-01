@@ -490,7 +490,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 			rle_decode (f, pixels, tw*th, layer->type);
 
-			int origin = 4 * ox + rowstride * oy ;
+			int origin = 4 * (ox + layer->dx) + rowstride * (oy + layer->dy) ;
 
 			int j;
 			for (j=0; j<th;j++) {
