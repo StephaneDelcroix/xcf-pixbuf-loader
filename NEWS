@@ -1,0 +1,6 @@
+Unreleased:
+- parse the file
+- supports encoded and unencoded streams
+- supports layers extending outside of the canvas
+- supports rgb(a), grayscale(a). No support for indexed images.
+- static and progressive pixbuf loaders.
