@@ -162,34 +162,39 @@ rle_decode (FILE *f, gchar *ptr, int count, int type)
 		}
 	}
 
-	//re-interlace, pad to rgba
+	//reinterlace the channels
+	int i, j;
+	for (i=0; i <count; i++)
+		for (j=0; j<channels; j++)
+			memcpy (ptr + i * channels + j, ch[j] + i, 1);
+}
+
+void
+to_rgba (gchar *ptr, int count, int type)
+{
+	//pad to rgba
 	int i;
 
-	for (i=0; i<count;i++)
+	for (i=count-1; i>=0;i--)
 		switch (type) {
 		case LAYERTYPE_RGB:
-			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
-			memcpy (ptr + 4*i + 1, ch[1] + i, 1);
-			memcpy (ptr + 4*i + 2, ch[2] + i, 1);
+			memcpy (ptr + 4*i, ptr + 3*i, 3);
 			ptr[4*i + 3] = 0xff;
 			break;
 		case LAYERTYPE_RGBA:
-			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
-			memcpy (ptr + 4*i + 1, ch[1] + i, 1);
-			memcpy (ptr + 4*i + 2, ch[2] + i, 1);
-			memcpy (ptr + 4*i + 3, ch[3] + i, 1);
+			///nothing to do
 			break;
 		case LAYERTYPE_GRAYSCALE:
-			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
-			memcpy (ptr + 4*i + 1, ch[0] + i, 1);
-			memcpy (ptr + 4*i + 2, ch[0] + i, 1);	
+			memcpy (ptr + 4*i, ptr + i, 1);
+			memcpy (ptr + 4*i + 1, ptr + i, 1);
+			memcpy (ptr + 4*i + 2, ptr + i, 1);
 			ptr[4*i + 3] = 0xff;
 			break;
 		case LAYERTYPE_GRAYSCALEA: 
-			memcpy (ptr + 4*i + 0, ch[0] + i, 1);
-			memcpy (ptr + 4*i + 1, ch[0] + i, 1);
-			memcpy (ptr + 4*i + 2, ch[0] + i, 1);	
-			memcpy (ptr + 4*i + 3, ch[1] + i, 1);
+			memcpy (ptr + 4*i, ptr + i, 1);
+			memcpy (ptr + 4*i + 1, ptr + i, 1);
+			memcpy (ptr + 4*i + 2, ptr + i, 1);
+			memcpy (ptr + 4+i + 3, ptr + i + 1, 1);
 			break;
 		}
 }
@@ -531,7 +536,24 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 				continue;
 			}
 
-			rle_decode (f, pixels, tw*th, layer->type);
+			//decompress
+			if (compression == COMPRESSION_RLE)
+				rle_decode (f, pixels, tw*th, layer->type);
+			else {//COMPRESSION_NONE
+				int channels;
+				switch (layer->type) {
+					case LAYERTYPE_RGB : channels = 3; break;
+					case LAYERTYPE_RGBA: channels = 4; break;
+					case LAYERTYPE_GRAYSCALE: channels = 1; break;
+					case LAYERTYPE_GRAYSCALEA: channels = 2; break;
+					case LAYERTYPE_INDEXED: channels = 1; break;
+					case LAYERTYPE_INDEXEDA: channels = 2; break;
+				}
+				fread (pixels, sizeof(gchar), tw*th*channels, f);
+			}
+
+			//pad to rgba
+			to_rgba (pixels, tw*th, layer->type);
 
 			//reduce the tile to its intersection with the canvas
 			intersect_tile (pixels, width, height, &ox, &oy, &tw, &th);
@@ -543,14 +565,14 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 
 			//composite
-
+			//FIXME: this is just a quick hack pack layers on top of each other
 			int origin = 4 * ox + rowstride * oy ;
-
 			int j;
 			for (j=0; j<th;j++) {
 				memcpy (pixs + origin + j * rowstride, pixels + j*tw*4 , tw*4);
 			}
 			
+			//notify
 			if (context && context->update_func)
 				(* context->update_func) (pixbuf, ox, oy, tw, th, context->user_data);
 
