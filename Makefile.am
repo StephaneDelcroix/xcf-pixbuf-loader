@@ -1,5 +1,8 @@
 lib_LTLIBRARIES = libioxcf.la
 
+ChangeLog: *
+	git log --pretty=medium > $@
+
 INCLUDES =			\
 	$(GDKPIXBUF_CFLAGS)	\
 	$(GLIB_CFLAGS)
