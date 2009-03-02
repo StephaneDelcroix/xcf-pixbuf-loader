@@ -234,6 +234,16 @@ intersect_tile (guchar* ptr, int im_width, int im_height, int *ox, int *oy, int 
 	}
 }
 
+void
+composite (gchar *pixbuf_pixels, int rowstride, char *tile_pixels, int ox, int oy, int tw, int th, guint32 layer_mode)
+{
+	int origin = 4 * ox + rowstride * oy;
+	int j;
+	for (j=0; j<th;j++) {
+		memcpy (pixbuf_pixels + origin + j * rowstride, tile_pixels + j*tw*4 , tw*4);
+	}
+}
+
 static GdkPixbuf*
 xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 {
@@ -565,12 +575,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 
 			//composite
-			//FIXME: this is just a quick hack pack layers on top of each other
-			int origin = 4 * ox + rowstride * oy ;
-			int j;
-			for (j=0; j<th;j++) {
-				memcpy (pixs + origin + j * rowstride, pixels + j*tw*4 , tw*4);
-			}
+			composite (pixs, rowstride, pixels, ox, oy, tw, th, layer->mode);
 			
 			//notify
 			if (context && context->update_func)
@@ -706,7 +711,7 @@ MODULE_ENTRY (fill_info) (GdkPixbufFormat *info)
 
 	info->name = "xcf";
         info->signature = signature;
-	info->description = "The XCF (gimp) image format";
+	info->description = "The XCF (The Gimp) image format";
 	info->mime_types = mime_types;
 	info->extensions = extensions;
 	info->flags = 0;
