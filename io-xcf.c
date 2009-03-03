@@ -328,7 +328,6 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 				dest[3] = alpha;
 			}
 		break;
-	case LAYERMODE_DISSOLVE:
 	case LAYERMODE_BEHIND: //ignore
 		break;
 	// 3<=mode<=10 || 15<=mode<=21
@@ -410,6 +409,8 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 	case LAYERMODE_GRAINEXTRACT:
 	case LAYERMODE_GRAINMERGE:
 
+	case LAYERMODE_DISSOLVE:
+
 	case LAYERMODE_HUE:
 	case LAYERMODE_SATURATION:
 	case LAYERMODE_COLOR:
@@ -440,7 +441,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 	//Magic and version
 	fread (buffer, sizeof(guchar), 9, f);
-	LOG ("%s\n", buffer);
+	//LOG ("%s\n", buffer);
 	if (strncmp (buffer, "gimp xcf ", 9)) {
 		g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_CORRUPT_IMAGE, "Wrong magic");
 		return NULL;
@@ -474,7 +475,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			break;
 		property[0] = SWAP(property[0]);
 		property[1] = SWAP(property[1]);
-		LOG ("property %d, payload %d\n", property[0], property[1]);
+		//LOG ("property %d, payload %d\n", property[0], property[1]);
 		switch (property[0]) {
 		case PROP_COMPRESSION:
 			fread (&compression, sizeof(gchar), 1, f);
@@ -513,7 +514,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		layer->visible = TRUE;
 		layer->opacity = 0xff;
 
-		LOG ("layer_ptr: %d\n", layer_ptr);
+		//LOG ("layer_ptr: %d\n", layer_ptr);
 		long pos = ftell (f);
 		//jump to the layer
 		fseek(f, layer_ptr, SEEK_SET);
@@ -537,7 +538,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 				break;		//break on PROP_END
 			property[0] = SWAP (property[0]);
 			property[1] = SWAP (property[1]);
-			LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
+			//LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
 			switch (property[0]) {
 			case PROP_OPACITY:
 				fread (data, sizeof(guint32), 1, f);
@@ -584,7 +585,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		data[0] = SWAP(data[0]);
 		data[1] = SWAP(data[1]);
 		data[2] = SWAP(data[2]);
-		LOG ("\tHierarchy w:%d, h:%d, bpp:%d\n", data[0], data[1], data[2]);
+		//LOG ("\tHierarchy w:%d, h:%d, bpp:%d\n", data[0], data[1], data[2]);
 
 		guint32 lptr;
 		fread (&lptr, sizeof(guint32), 1, f);
@@ -623,7 +624,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 		channel_ptr = SWAP(channel_ptr);
 
-		LOG ("channel_ptr: %d\n", channel_ptr);
+		//LOG ("channel_ptr: %d\n", channel_ptr);
 		long pos = ftell (f);
 		//jump to the channel
 		fseek(f, channel_ptr, SEEK_SET);
@@ -632,7 +633,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		fread (data, sizeof(guint32), 2, f);
 		data[0] = SWAP(data[0]);
 		data[1] = SWAP(data[1]);
-		LOG ("\tChannel w:%d, h:%d\n", data[0], data[1]);
+		//LOG ("\tChannel w:%d, h:%d\n", data[0], data[1]);
 
 		//Channel name, ignore
 		guint32 string_size;
@@ -646,7 +647,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 				break;		//break on PROP_END
 			property[0] = SWAP (property[0]);
 			property[1] = SWAP (property[1]);
-			LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
+			//LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
 			switch (property[0]) {
 			default:
 				//skip the payload
@@ -717,7 +718,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			int th = MIN (64, layer->height - oy);
 			ox += layer->dx;
 			oy += layer->dy;
-			LOG("\tTile %d %d (%d %d) (%d %d)\n", tile_id, tptr, ox, oy, tw, th);
+			//LOG("\tTile %d %d (%d %d) (%d %d)\n", tile_id, tptr, ox, oy, tw, th);
 
 			//if the tile doesn't intersect with the canvas, ignore
 			if (ox + tw < 0 || oy + th < 0 || ox > (int)width || oy > (int)height ) {
