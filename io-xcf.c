@@ -236,15 +236,69 @@ intersect_tile (guchar* ptr, int im_width, int im_height, int *ox, int *oy, int 
 
 void blend (guchar* rgba0, guchar* rgba1)
 {
-	double k = (double)rgba1[3] / (double)(0xff-(0xff-rgba0[3])*(0xff-rgba1[3]));
-	rgba0[0] = (guchar)((1.0 - k)*rgba0[0] + k * rgba1[0]);
-	rgba0[1] = (guchar)((1.0 - k)*rgba0[1] + k * rgba1[1]);
-	rgba0[2] = (guchar)((1.0 - k)*rgba0[2] + k * rgba1[2]);	
+	guchar k = 0xff * rgba1[3] / (0xff - (0xff-rgba0[3])*(0xff-rgba1[3])/0xff);
+	rgba0[0] = ((0xff - k) * rgba0[0] + k * rgba1[0]) / 0xff;
+	rgba0[1] = ((0xff - k) * rgba0[1] + k * rgba1[1]) / 0xff;
+	rgba0[2] = ((0xff - k) * rgba0[2] + k * rgba1[2]) / 0xff;	
 }
+
+typedef void (*composite_func) (guchar* rgb0, guchar* rgb1);
+
+void
+multiply (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = (rgb0[0] * rgb1[0] ) / 0xff;
+	rgb1[1] = (rgb0[1] * rgb1[1] ) / 0xff;
+	rgb1[2] = (rgb0[2] * rgb1[2] ) / 0xff;
+}
+
+void
+screen (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = 0xff - (0xff - rgb0[0]) * (0xff - rgb1[0]) / 0xff;
+	rgb1[1] = 0xff - (0xff - rgb0[1]) * (0xff - rgb1[1]) / 0xff;
+	rgb1[2] = 0xff - (0xff - rgb0[2]) * (0xff - rgb1[2]) / 0xff;
+}
+
+void
+overlay (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = ((0xff - rgb1[0]) * rgb0[0] * rgb0[0] / 0xff + rgb0[0] * (0xff - (0xff - rgb1[0]) * (0xff - rgb1[0]) / 0xff)) / 0xff;
+	rgb1[1] = ((0xff - rgb1[1]) * rgb0[1] * rgb0[1] / 0xff + rgb0[1] * (0xff - (0xff - rgb1[1]) * (0xff - rgb1[1]) / 0xff)) / 0xff;
+	rgb1[2] = ((0xff - rgb1[2]) * rgb0[2] * rgb0[2] / 0xff + rgb0[2] * (0xff - (0xff - rgb1[2]) * (0xff - rgb1[2]) / 0xff)) / 0xff;
+}
+
+void
+difference (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = (rgb0[0] > rgb1[0]) ? rgb0[0] - rgb1[0] : rgb1[0] - rgb0[0];
+	rgb1[1] = (rgb0[1] > rgb1[1]) ? rgb0[1] - rgb1[1] : rgb1[1] - rgb0[1];
+	rgb1[2] = (rgb0[2] > rgb1[2]) ? rgb0[2] - rgb1[2] : rgb1[2] - rgb0[2];
+}
+
+void
+addition (guchar *rgb0, guchar *rgb1)
+{
+//	LOG ("addition (%d %d %d) (%d %d %d):", rgb0[0], rgb0[1], rgb0[2], rgb1[0], rgb1[1], rgb1[2]);
+	rgb1[0] = (rgb0[0] + rgb1[0]) > 0xff ? 0xff : rgb0[0] + rgb1[0];
+	rgb1[1] = (rgb0[1] + rgb1[1]) > 0xff ? 0xff : rgb0[1] + rgb1[1];
+	rgb1[2] = (rgb0[2] + rgb1[2]) > 0xff ? 0xff : rgb0[2] + rgb1[2];
+//	LOG ("(%d %d %d)\n", rgb1[0], rgb1[1], rgb1[2]);
+}
+
+void
+subtract (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = (rgb0[0] - rgb1[0]) < 0 ? 0 : rgb0[0] - rgb1[0];
+	rgb1[1] = (rgb0[1] - rgb1[1]) < 0 ? 0 : rgb0[1] - rgb1[1];
+	rgb1[2] = (rgb0[2] - rgb1[2]) < 0 ? 0 : rgb0[2] - rgb1[2];
+}
+
 
 void
 composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int oy, int tw, int th, guint32 layer_mode)
 {
+	composite_func f = NULL;
 	int origin = 4 * ox + rowstride * oy;
 	int i, j;
 
@@ -262,26 +316,92 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 			}
 		break;
 	case LAYERMODE_DISSOLVE:
-	case LAYERMODE_BEHIND:
+	case LAYERMODE_BEHIND: //ignore
+		break;
+	// 3<=mode<=10 || 15<=mode<=21
+	// a0 = a0
+	// rgba0 = blend (rgba0, F(rgb0, rgb1), MIN(a0, a1)
 	case LAYERMODE_MULTIPLY:
+		f = multiply;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_SCREEN:
+		f = screen;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_OVERLAY:
+	case LAYERMODE_SOFTLIGHT:
+		f = overlay;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_DIFFERENCE:
+		f = difference;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_ADDITION:
+		f = addition;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_SUBTRACT:
+		f = subtract;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_DARKENONLY:
 	case LAYERMODE_LIGHTENONLY:
-	case LAYERMODE_HUE:
-	case LAYERMODE_SATURATION:
-	case LAYERMODE_COLOR:
-	case LAYERMODE_VALUE:
 	case LAYERMODE_DIVIDE:
 	case LAYERMODE_DODGE:
 	case LAYERMODE_BURN:
 	case LAYERMODE_HARDLIGHT:
-	case LAYERMODE_SOFTLIGHT:
 	case LAYERMODE_GRAINEXTRACT:
 	case LAYERMODE_GRAINMERGE:
+
+	case LAYERMODE_HUE:
+	case LAYERMODE_SATURATION:
+	case LAYERMODE_COLOR:
+	case LAYERMODE_VALUE:
+	
 	default:	//Pack layer on top of each other, without any blending at all
 		for (j=0; j<th;j++) {
 			memcpy (pixbuf_pixels + origin + j * rowstride, tile_pixels + j*tw*4 , tw*4);
