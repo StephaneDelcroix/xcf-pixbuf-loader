@@ -33,6 +33,7 @@
 #include <gdk-pixbuf/gdk-pixbuf-io.h>
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
 #include <errno.h>
 
 #define LOG(...) printf (__VA_ARGS__);
@@ -391,6 +392,19 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 				dest[3] = alpha;
 			}
 		break;
+	case LAYERMODE_DISSOLVE:
+		srand(time(0));
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				guchar d = rand () % 0x100;
+				dest [0] = d <= src[3] ? src[0] : dest[0];
+				dest [1] = d <= src[3] ? src[1] : dest[1];
+				dest [2] = d <= src[3] ? src[2] : dest[2];
+				dest [3] = d <= src[3] ? 0xff : dest[3];
+			}
+		break;
 	case LAYERMODE_BEHIND: //ignore
 		break;
 	// 3<=mode<=10 || 15<=mode<=21
@@ -551,8 +565,6 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 				blend (dest, src);
 			}
 		break;
-
-	case LAYERMODE_DISSOLVE:
 
 	case LAYERMODE_HUE:
 	case LAYERMODE_SATURATION:
