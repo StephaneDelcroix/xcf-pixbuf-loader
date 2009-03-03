@@ -307,6 +307,69 @@ subtract (guchar *rgb0, guchar *rgb1)
 	rgb1[2] = (rgb0[2] - rgb1[2]) < 0 ? 0 : rgb0[2] - rgb1[2];
 }
 
+void
+min (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = MIN (rgb0[0], rgb1[0]);
+	rgb1[1] = MIN (rgb0[1], rgb1[1]);
+	rgb1[2] = MIN (rgb0[2], rgb1[2]);
+}
+
+void
+max (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = MAX (rgb0[0], rgb1[0]);
+	rgb1[1] = MAX (rgb0[1], rgb1[1]);
+	rgb1[2] = MAX (rgb0[2], rgb1[2]);
+}
+
+void
+divide (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = rgb1[0] == 0 ? (rgb0[0] == 0 ? 0 : 0xff) : MIN (0xff, 0xff * rgb0[0] / rgb1[0]);
+	rgb1[1] = rgb1[1] == 0 ? (rgb0[1] == 0 ? 0 : 0xff) : MIN (0xff, 0xff * rgb0[1] / rgb1[1]);
+	rgb1[2] = rgb1[2] == 0 ? (rgb0[2] == 0 ? 0 : 0xff) : MIN (0xff, 0xff * rgb0[2] / rgb1[2]);
+}
+
+void
+dodge (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = rgb1[0] == 0xff ? (rgb0[0] == 0 ? 0 : 0xff) : MIN (0xff, 0xff * rgb0[0] / (0xff - rgb1[0]));
+	rgb1[1] = rgb1[1] == 0xff ? (rgb0[1] == 0 ? 0 : 0xff) : MIN (0xff, 0xff * rgb0[1] / (0xff - rgb1[1]));
+	rgb1[2] = rgb1[2] == 0xff ? (rgb0[2] == 0 ? 0 : 0xff) : MIN (0xff, 0xff * rgb0[2] / (0xff - rgb1[2]));
+}
+
+void
+burn (guchar *rgb0, guchar *rgb1) // 1-(1-x1)/x2
+{
+	rgb1[0] = rgb1[0] == 0 ? (rgb0[0] == 0xff ? 0xff : 0) : 0xff - MIN (0xff, 0xff * (0xff - rgb0[0]) / rgb1[0]);
+	rgb1[1] = rgb1[1] == 0 ? (rgb0[1] == 0xff ? 0xff : 0) : 0xff - MIN (0xff, 0xff * (0xff - rgb0[1]) / rgb1[1]);
+	rgb1[2] = rgb1[2] == 0 ? (rgb0[2] == 0xff ? 0xff : 0) : 0xff - MIN (0xff, 0xff * (0xff - rgb0[2]) / rgb1[2]);
+}
+
+void
+hardlight (guchar *rgb0, guchar *rgb1) //if x2 < 0.5 then 2*x1*x2 else 1-2*(1-x1)(1-x2)
+{
+	rgb1[0] = rgb1[0] < 0x80 ? 2 * rgb0[0] * rgb1[0] / 0xff : 0xff - 2 * (0xff - rgb0[0]) * (0xff - rgb1[0])/ 0xff;
+	rgb1[1] = rgb1[1] < 0x80 ? 2 * rgb0[1] * rgb1[1] / 0xff : 0xff - 2 * (0xff - rgb0[1]) * (0xff - rgb1[1])/ 0xff;
+	rgb1[2] = rgb1[2] < 0x80 ? 2 * rgb0[2] * rgb1[2] / 0xff : 0xff - 2 * (0xff - rgb0[2]) * (0xff - rgb1[2])/ 0xff;
+}
+
+void
+grainextract (guchar *rgb0, guchar *rgb1) //x1-x2+.5
+{
+	rgb1[0] = MAX (0, MIN (0xff, rgb0[0] - rgb1[0] + 0x80));
+	rgb1[1] = MAX (0, MIN (0xff, rgb0[1] - rgb1[1] + 0x80));
+	rgb1[2] = MAX (0, MIN (0xff, rgb0[2] - rgb1[2] + 0x80));
+}
+
+void
+grainmerge (guchar *rgb0, guchar *rgb1)
+{
+	rgb1[0] = MAX (0, MIN (0xff, rgb0[0] + rgb1[0] - 0x80));
+	rgb1[1] = MAX (0, MIN (0xff, rgb0[1] + rgb1[1] - 0x80));
+	rgb1[2] = MAX (0, MIN (0xff, rgb0[2] + rgb1[2] - 0x80));
+}
 
 void
 composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int oy, int tw, int th, guint32 layer_mode)
@@ -401,13 +464,93 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 			}
 		break;
 	case LAYERMODE_DARKENONLY:
+		f = min;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_LIGHTENONLY:
+		f = max;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_DIVIDE:
+		f = divide;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_DODGE:
+		f = dodge;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_BURN:
+		f = burn;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_HARDLIGHT:
+		f = hardlight;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_GRAINEXTRACT:
+		f = grainextract;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_GRAINMERGE:
+		f = grainmerge;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 
 	case LAYERMODE_DISSOLVE:
 
