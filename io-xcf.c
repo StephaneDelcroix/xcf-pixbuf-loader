@@ -372,6 +372,63 @@ grainmerge (guchar *rgb0, guchar *rgb1)
 	rgb1[2] = MAX (0, MIN (0xff, rgb0[2] + rgb1[2] - 0x80));
 }
 
+
+//FIXME: any way to do this in integer arithmetic ?
+void
+hue (guchar *rgb0, guchar *rgb1)
+{
+	if (rgb1[0] == rgb1[1] == rgb1[2]) {
+		rgb1[0] = rgb0[0];
+		rgb1[1] = rgb0[1];
+		rgb1[2] = rgb0[2];
+		return;
+	}
+	//hue of rgb1, value and saturation of rgb0
+	guchar min0 = MIN (MIN (rgb0[0], rgb0[1]), rgb0[2]);
+	guchar max0 = MAX (MAX (rgb0[0], rgb0[1]), rgb0[2]);
+	guchar min1 = MIN (MIN (rgb1[0], rgb1[1]), rgb1[2]);
+	guchar max1 = MAX (MAX (rgb1[0], rgb1[1]), rgb1[2]);
+	if (max0 == 0) {
+		rgb1[0] = 0x00;
+		rgb1[1] = 0x00;
+		rgb1[2] = 0x00;
+		return;
+	}
+	double p = max0 * (max0 - min0) / (max1*(max0-min0) - min1*max0 + max1*min0);
+	double q = - max0 * (min1*max0 - max1*min0) / (max1*(max0-min0) - min1*max0 + max1*min0);
+	rgb1[0] = (guchar)(rgb1[0] * p + q);
+	rgb1[1] = (guchar)(rgb1[1] * p + q);
+	rgb1[2] = (guchar)(rgb1[2] * p + q);
+}
+
+void
+saturation (guchar *rgb0, guchar *rgb1)
+{
+	//hue and value of rgb0, saturation of rgb1
+	guchar min0 = MIN (MIN (rgb0[0], rgb0[1]), rgb0[2]);
+	guchar max0 = MAX (MAX (rgb0[0], rgb0[1]), rgb0[2]);
+	guchar min1 = MIN (MIN (rgb1[0], rgb1[1]), rgb1[2]);
+	guchar max1 = MAX (MAX (rgb1[0], rgb1[1]), rgb1[2]);
+	if (max0 == 0) {
+		rgb1[0] = 0x00;
+		rgb1[1] = 0x00;
+		rgb1[2] = 0x00;
+		return;
+	}
+	if (max0 == min0) {
+		rgb1[0] = max0;
+		rgb1[1] = min1*max0 / max0;
+		rgb1[2] = rgb1[1];
+		return;
+	}
+	double p = max0 * (min1 - max1) / (max0*(min1-max1) - min1*max0 + max1*min0);
+	double q = - max0 * (min1*max0 - max1*min0) / (max0*(min1-max1) - min1*max0 + max1*min0);
+	rgb1[0] = (guchar)(rgb0[0] * p + q);
+	rgb1[1] = (guchar)(rgb0[1] * p + q);
+	rgb1[2] = (guchar)(rgb0[2] * p + q);
+	
+}
+
 void
 composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int oy, int tw, int th, guint32 layer_mode)
 {
@@ -565,9 +622,28 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 				blend (dest, src);
 			}
 		break;
-
 	case LAYERMODE_HUE:
+		f = hue;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_SATURATION:
+		f = saturation;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	case LAYERMODE_COLOR:
 	case LAYERMODE_VALUE:
 	
