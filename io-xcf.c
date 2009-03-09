@@ -458,6 +458,23 @@ value (guchar *rgb0, guchar *rgb1)
 }
 
 void
+color (guchar *rgb0, guchar *rgb1)
+{
+	//hue and hsl-saturation or rgb1, luminosity of rgb0
+	guchar min0 = MIN (MIN (rgb0[0], rgb0[1]), rgb0[2]);
+	guchar max0 = MAX (MAX (rgb0[0], rgb0[1]), rgb0[2]);
+	guchar min1 = MIN (MIN (rgb1[0], rgb1[1]), rgb1[2]);
+	guchar max1 = MAX (MAX (rgb1[0], rgb1[1]), rgb1[2]);
+
+	double p = MIN ((min0+max0)/2, 0xff - (min0+max0)/2) / MIN ((min1+max1)/2, 0xff - (min1+max1)/2);
+	double q = (min0 + max0 - (min1 + max1) * p) / 2.0;
+
+	rgb1[0] = (guchar)(rgb1[0] * p + q);
+	rgb1[1] = (guchar)(rgb1[1] * p + q);
+	rgb1[2] = (guchar)(rgb1[2] * p + q);
+}
+
+void
 composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int oy, int tw, int th, guint32 layer_mode)
 {
 	composite_func f = NULL;
@@ -684,6 +701,16 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 			}
 		break;
 	case LAYERMODE_COLOR:
+		f = color;
+		for (j=0;j<th;j++)
+			for (i=0;i<tw;i++) {
+				guchar *dest = pixbuf_pixels + origin + j * rowstride + 4 * i;
+				guchar *src = tile_pixels + j*tw*4 + i*4;
+				f (dest, src);
+				src[3] = MIN (dest[3], src[3]);
+				blend (dest, src);
+			}
+		break;
 	
 	default:	//Pack layer on top of each other, without any blending at all
 		for (j=0; j<th;j++) {
