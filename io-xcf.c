@@ -1105,6 +1105,14 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		}
 	}
 
+	//free the layers and masks
+	for (current = g_list_first (layers); current; current = g_list_next(current)) {
+		XcfLayer *layer = current->data;
+		if (layer->layer_mask)
+			g_free (layer->layer_mask);
+	}
+	g_list_free (layers);
+
 	return pixbuf;
 }
 
