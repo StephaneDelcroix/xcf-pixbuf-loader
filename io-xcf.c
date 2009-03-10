@@ -373,7 +373,7 @@ grainmerge (guchar *rgb0, guchar *rgb1)
 }
 
 
-//FIXME: any way to do this in integer arithmetic ?
+//FIXME: any way to do the following 4 ones in integer arithmetic ?
 void
 hue (guchar *rgb0, guchar *rgb1)
 {
@@ -795,11 +795,13 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			break;;
 
 		XcfLayer *layer = g_try_new (XcfLayer, 1);
-		if (!layer)
+		if (!layer) {
 			g_set_error_literal (error,
 			     GDK_PIXBUF_ERROR,
 			     GDK_PIXBUF_ERROR_INSUFFICIENT_MEMORY,
-			     "Cannot allocate memory for loading XCF image");	
+			     "Cannot allocate memory for loading XCF image");
+			return NULL;
+		}
 
 		gboolean ignore_layer = FALSE;
 
