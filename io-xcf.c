@@ -225,6 +225,32 @@ apply_opacity (guchar* ptr, int size, guint32 opacity)
 }
 
 void
+apply_mask (FILE *f, gchar compression, guchar *ptr, int size, XcfChannel *mask, int tile_id)
+{
+	//save file position
+	long pos = ftell (f);
+	
+	guint32 tptr = mask->lptr + (2 + tile_id) * sizeof(guint32); //skip width and height
+	fseek (f, tptr, SEEK_SET);
+	fread (&tptr, sizeof(guint32), 1, f);
+	fseek (f, SWAP(tptr), SEEK_SET);
+
+	gchar pixels[4096];
+	if (compression == COMPRESSION_RLE)
+		rle_decode (f, pixels, size, LAYERTYPE_GRAYSCALE);
+	else //COMPRESSION_NONE
+		fread (pixels, sizeof(gchar), size, f);
+
+	int i;
+	for (i = 0; i<size; i++)
+		ptr[4*i + 3] = ptr[4 * i + 3] * pixels[i] / 0xff;
+
+	//rewind
+	fseek (f, pos, SEEK_SET);
+}
+
+
+void
 intersect_tile (guchar* ptr, int im_width, int im_height, int *ox, int *oy, int *tw, int *th)
 {
 	int i;
@@ -1083,14 +1109,15 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			//pad to rgba
 			to_rgba (pixels, tw*th, layer->type);
 
+			//apply mask
+			if (layer->layer_mask)
+				apply_mask (f, compression, pixels, tw*th, layer->layer_mask, tile_id);
+
 			//reduce the tile to its intersection with the canvas
 			intersect_tile (pixels, width, height, &ox, &oy, &tw, &th);
 			
 			//apply layer opacity
 			apply_opacity (pixels, tw*th, layer->opacity);
-
-			//apply mask
-
 
 			//composite
 			composite (pixs, rowstride, pixels, ox, oy, tw, th, layer->mode);
