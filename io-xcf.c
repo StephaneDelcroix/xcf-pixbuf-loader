@@ -848,8 +848,10 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 				break;
 			case PROP_VISIBLE:
 				fread (data, sizeof(guint32), 1, f);
-				if (SWAP(data[0]) == 0)
+				if (SWAP(data[0]) == 0) {
 					layer->visible = FALSE;
+					ignore_layer = TRUE;
+				}
 				break;
 			case PROP_APPLY_MASK:
 				fread (data, sizeof(guint32), 1, f);
