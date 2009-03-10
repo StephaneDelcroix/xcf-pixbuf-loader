@@ -991,6 +991,11 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		mask->lptr = SWAP (lptr);
 		//level parsing is done at render time
 
+		if (mask->visible)
+			layer->layer_mask = mask;
+		else
+			g_free (mask);
+
 		//rewind...
 		fseek (f, mpos1, SEEK_SET);
 
@@ -1027,6 +1032,8 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		fseek (f, layer->lptr, SEEK_SET);
 		//Ignore Level w and h (same as hierarchy)
 		fseek (f, 2 * sizeof(guint32), SEEK_CUR);
+
+
 		//Iterate on the tiles
 		guint32 tptr;
 		int tile_id = 0;
