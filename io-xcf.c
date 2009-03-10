@@ -111,6 +111,9 @@ typedef struct _XcfChannel XcfChannel;
 struct _XcfChannel {
 	guint32 width;
 	guint32 height;
+	gboolean visible;
+	guint32 opacity;
+	guint32 lptr;
 };
 
 typedef struct _XcfLayer XcfLayer;
@@ -900,7 +903,8 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		//Mask Pointer
 		guint32 mptr;
 		fread (&mptr, sizeof(guint32), 1, f);
-
+		if (mptr)
+			mptr = SWAP(mptr);
 
 		//rewind to the previous position
 		fseek (f, pos, SEEK_SET);
@@ -909,38 +913,42 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		if (!ignore_layer)
 			layers = g_list_prepend (layers, layer); //prepend so the layers are in a bottom-up order in the list
 		else {
-			if (layer->layer_mask)
-				g_free(layer->layer_mask);
 			g_free (layer);
+			continue;
 		}
-	}
 
-	//Channels
-	guint32 channel_ptr;
-	while (1) {
-		fread (&channel_ptr, sizeof(guint32), 1, f);
-		if (!channel_ptr)
-			break;
+		if (!layer->apply_mask || !mptr)
+			continue;
+		
+		LOG ("\t\tthis layer has a mask\n");
+		XcfChannel *mask = g_try_new (XcfChannel, 1);
+		if (!mask) {
+			g_set_error_literal (error,
+			     GDK_PIXBUF_ERROR,
+			     GDK_PIXBUF_ERROR_INSUFFICIENT_MEMORY,
+			     "Cannot allocate memory for loading XCF image");
+			return NULL;
+		}
 
-		channel_ptr = SWAP(channel_ptr);
+		mask->opacity = 0xff;
+		mask->visible = TRUE;
 
-		//LOG ("channel_ptr: %d\n", channel_ptr);
-		long pos = ftell (f);
+		//LOG ("\t\tchannel_ptr: %d\n", mptr);
+		long mpos = ftell (f);
 		//jump to the channel
-		fseek(f, channel_ptr, SEEK_SET);
+		fseek(f, mptr, SEEK_SET);
 
 		//Channel w, h
 		fread (data, sizeof(guint32), 2, f);
 		data[0] = SWAP(data[0]);
 		data[1] = SWAP(data[1]);
-		//LOG ("\tChannel w:%d, h:%d\n", data[0], data[1]);
+		LOG ("\t\tChannel w:%d, h:%d\n", data[0], data[1]);
 
 		//Channel name, ignore
-		guint32 string_size;
 		fread (&string_size, sizeof(guint32), 1, f);
 		fseek (f, SWAP(string_size), SEEK_CUR);
 
-		//Channel properties, skip them all
+		//Channel properties
 		while (1) {
 			fread (property, sizeof(guint32), 2, f); //property and payload
 			if (!property[0])
@@ -949,6 +957,15 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			property[1] = SWAP (property[1]);
 			//LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
 			switch (property[0]) {
+			case PROP_OPACITY:
+				fread (data, sizeof(guint32), 1, f);
+				mask->opacity = SWAP(data[0]);
+				break;
+			case PROP_VISIBLE:
+				fread (data, sizeof(guint32), 1, f);
+				if (SWAP(data[0]) == 0)
+					mask->visible = FALSE;
+				break;
 			default:
 				//skip the payload
 				fseek (f, property[1], SEEK_CUR);
@@ -957,20 +974,33 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		}
 
 		//Hierararchy Pointer
-		guint32 hptr;
 		fread (&hptr, sizeof(guint32), 1, f);
 		hptr = SWAP (hptr);
-		long pos1 = ftell (f);
+		long mpos1 = ftell (f);
 		//jump to hierarchy
+		fseek (f, hptr, SEEK_SET);
+
+		//Hierarchy w, h, bpp
+		fread (data, sizeof(guint32), 3, f);
+		data[0] = SWAP(data[0]);
+		data[1] = SWAP(data[1]);
+		data[2] = SWAP(data[2]);
+		//LOG ("\tHierarchy w:%d, h:%d, bpp:%d\n", data[0], data[1], data[2]);
+
+		fread (&lptr, sizeof(guint32), 1, f);
+		mask->lptr = SWAP (lptr);
+		//level parsing is done at render time
 
 		//rewind...
-		fseek (f, pos1, SEEK_SET);
-
+		fseek (f, mpos1, SEEK_SET);
 
 		//rewind to the previous position
-		fseek (f, pos, SEEK_SET);
-
+		fseek (f, mpos, SEEK_SET);
 	}
+
+	//Channels goes here, don't read
+
+	LOG("Done parsing\n");
 
 	//Compose the pixbuf
 	pixbuf = gdk_pixbuf_new (GDK_COLORSPACE_RGB, TRUE, 8, width, height);
