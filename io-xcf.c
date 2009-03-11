@@ -107,6 +107,7 @@
 #define LAYERMODE_GRAINEXTRACT	20
 #define LAYERMODE_GRAINMERGE	21
 
+#define FILETYPE_STREAMCLOSED	-1
 #define FILETYPE_UNKNOWN	0
 #define FILETYPE_XCF		1
 #define FILETYPE_XCF_BZ2	2
@@ -1248,6 +1249,11 @@ xcf_image_load_increment (gpointer data,
 	g_return_val_if_fail (data, FALSE);
 	XcfContext *context = (XcfContext*) data;
 
+	if (context->type == FILETYPE_STREAMCLOSED) { //end of compressed stream reached
+		g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_CORRUPT_IMAGE, "end of compressed stream reached before the end of the file");
+		return FALSE;
+	}
+
 	if (context->type == FILETYPE_UNKNOWN) { // first chunk
 		if (!strncmp (buf, "gimp xcf ", 9))
 			context->type = FILETYPE_XCF;
@@ -1260,7 +1266,7 @@ xcf_image_load_increment (gpointer data,
 			context->bz_stream->bzfree = NULL;
 			context->bz_stream->opaque = NULL;
 
-			int ret = BZ2_bzDecompressInit (context->bz_stream, 4, 0); //Verbosity = 4, don't optimize for memory usage
+			int ret = BZ2_bzDecompressInit (context->bz_stream, 0, 0); //Verbosity = 0, don't optimize for memory usage
 			if (ret != BZ_OK) {
 				g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to initialize bz2 decompressor");
 				return FALSE;
@@ -1279,32 +1285,18 @@ xcf_image_load_increment (gpointer data,
 		while (context->bz_stream->avail_in > 0) {
 			context->bz_stream->next_out = outbuf;
 			context->bz_stream->avail_out = 65536;
-			LOG ("BEFORE:\tnext_in %p, avail_in %d, total_in %d, next_out %p, avail_out %d total_out %d\n",
-					context->bz_stream->next_in,
-					context->bz_stream->avail_in,
-					context->bz_stream->total_in_lo32,
-					context->bz_stream->next_out,
-					context->bz_stream->avail_out,
-					context->bz_stream->total_out_lo32);
 			int ret = BZ2_bzDecompress (context->bz_stream);
-			LOG ("AFTER:\tnext_in %p, avail_in %d, total_in %d, next_out %p, avail_out %d total_out %d\n",
-					context->bz_stream->next_in,
-					context->bz_stream->avail_in,
-					context->bz_stream->total_in_lo32,
-					context->bz_stream->next_out,
-					context->bz_stream->avail_out,
-					context->bz_stream->total_out_lo32);
 			switch (ret) {
 			case BZ_OK:
 				break;
 			case BZ_STREAM_END:
 				LOG ("End of bz stream\n");
 				BZ2_bzDecompressEnd (context->bz_stream);
-				//FIXME set the filetype to CLOSED
+				context->type = FILETYPE_STREAMCLOSED;
 				break;
 			default:
 				BZ2_bzDecompressEnd (context->bz_stream);
-				//FIXME set the filetype to CLOSED
+				context->type = FILETYPE_STREAMCLOSED;
 				g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to decompress");
 				return FALSE;
 			}
