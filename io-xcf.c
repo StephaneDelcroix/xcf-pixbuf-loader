@@ -316,9 +316,11 @@ screen (guchar *rgb0, guchar *rgb1)
 void
 overlay (guchar *rgb0, guchar *rgb1)
 {
-	rgb1[0] = ((0xff - rgb1[0]) * rgb0[0] * rgb0[0] / 0xff + rgb0[0] * (0xff - (0xff - rgb1[0]) * (0xff - rgb1[0]) / 0xff)) / 0xff;
-	rgb1[1] = ((0xff - rgb1[1]) * rgb0[1] * rgb0[1] / 0xff + rgb0[1] * (0xff - (0xff - rgb1[1]) * (0xff - rgb1[1]) / 0xff)) / 0xff;
-	rgb1[2] = ((0xff - rgb1[2]) * rgb0[2] * rgb0[2] / 0xff + rgb0[2] * (0xff - (0xff - rgb1[2]) * (0xff - rgb1[2]) / 0xff)) / 0xff;
+	//LOG ("Overlay (%d %d %d) (%d %d %d) : ", rgb0[0], rgb0[1], rgb0[2], rgb1[0], rgb1[1], rgb1[2]);
+	rgb1[0] = MIN (0xff, ((0xff - rgb1[0]) * rgb0[0] * rgb0[0] / 0xff + rgb0[0] * (0xff - (0xff - rgb1[0]) * (0xff - rgb1[0]) / 0xff)) / 0xff);
+	rgb1[1] = MIN (0xff, ((0xff - rgb1[1]) * rgb0[1] * rgb0[1] / 0xff + rgb0[1] * (0xff - (0xff - rgb1[1]) * (0xff - rgb1[1]) / 0xff)) / 0xff);
+	rgb1[2] = MIN (0xff, ((0xff - rgb1[2]) * rgb0[2] * rgb0[2] / 0xff + rgb0[2] * (0xff - (0xff - rgb1[2]) * (0xff - rgb1[2]) / 0xff)) / 0xff);
+	//LOG ("(%d %d %d)\n", rgb1[0], rgb1[1], rgb1[2]);
 }
 
 void
