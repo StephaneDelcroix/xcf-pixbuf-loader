@@ -26,6 +26,16 @@
  * Boston, MA 02111-1307, USA.
  */
 
+/*
+ * TODO:
+ * - read xcf.gz, xcf.bz2
+ * - fix and test on bigendian machines
+ * - fix the spots/stains (where are they coming from) ?
+ * - indexed mode
+ * - if the bg layer mode is not Normal or Dissolve, change it to Normal
+ * - file an enhancement request to gdk-pixbuf
+ */
+
 #define GDK_PIXBUF_ENABLE_BACKEND
 
 #include <gmodule.h>
