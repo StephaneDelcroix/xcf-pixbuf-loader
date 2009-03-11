@@ -45,6 +45,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <bzlib.h>
 
 #define LOG(...) printf (__VA_ARGS__);
 
@@ -106,12 +107,18 @@
 #define LAYERMODE_GRAINEXTRACT	20
 #define LAYERMODE_GRAINMERGE	21
 
+#define FILETYPE_UNKNOWN	0
+#define FILETYPE_XCF		1
+#define FILETYPE_XCF_BZ2	2
+
 typedef struct _XcfContext XcfContext;
 struct _XcfContext {
 	GdkPixbufModuleSizeFunc size_func;
 	GdkPixbufModulePreparedFunc prepare_func;
 	GdkPixbufModuleUpdatedFunc update_func;
 	gpointer user_data;
+	gint type;
+	bz_stream *bz_stream;
 
 	gchar *tempname;
 	FILE *file;
@@ -1187,6 +1194,9 @@ xcf_image_begin_load (GdkPixbufModuleSizeFunc size_func,
 	context->prepare_func = prepare_func;
 	context->update_func = update_func;
 	context->user_data = user_data;
+	context->type = FILETYPE_UNKNOWN;
+	context->bz_stream = NULL;
+
 	fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &context->tempname, NULL);
 	
 	if (fd < 0) {
@@ -1235,17 +1245,95 @@ xcf_image_load_increment (gpointer data,
 		    GError **error)
 {
 	LOG ("Increment %d\n", size);
-	XcfContext *context = (XcfContext*) data;
 	g_return_val_if_fail (data, FALSE);
+	XcfContext *context = (XcfContext*) data;
 
-	if (fwrite (buf, sizeof (guchar), size, context->file) != size) {
-		gint save_errno = errno;
-		g_set_error_literal (error,
-				     G_FILE_ERROR,
-				     g_file_error_from_errno (save_errno),
-				     "Failed to write to temporary file when loading Xcf image");
-		return FALSE;
+	if (context->type == FILETYPE_UNKNOWN) { // first chunk
+		if (!strncmp (buf, "gimp xcf ", 9))
+			context->type = FILETYPE_XCF;
+		if (!strncmp (buf, "BZh", 3)) {
+			context->type = FILETYPE_XCF_BZ2;
+
+			//Initialize bzlib
+			context->bz_stream = g_new (bz_stream, 1);
+			context->bz_stream->bzalloc = NULL;
+			context->bz_stream->bzfree = NULL;
+			context->bz_stream->opaque = NULL;
+
+			int ret = BZ2_bzDecompressInit (context->bz_stream, 4, 0); //Verbosity = 4, don't optimize for memory usage
+			if (ret != BZ_OK) {
+				g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to initialize bz2 decompressor");
+				return FALSE;
+			}
+
+		}
+		LOG ("File type %d\n", context->type);
 	}
+
+	gchar *outbuf;
+	switch (context->type) {
+	case FILETYPE_XCF_BZ2:
+		outbuf = g_new (gchar, 65536);
+		context->bz_stream->next_in = (gchar*)buf;
+		context->bz_stream->avail_in = size;
+		while (context->bz_stream->avail_in > 0) {
+			context->bz_stream->next_out = outbuf;
+			context->bz_stream->avail_out = 65536;
+			LOG ("BEFORE:\tnext_in %p, avail_in %d, total_in %d, next_out %p, avail_out %d total_out %d\n",
+					context->bz_stream->next_in,
+					context->bz_stream->avail_in,
+					context->bz_stream->total_in_lo32,
+					context->bz_stream->next_out,
+					context->bz_stream->avail_out,
+					context->bz_stream->total_out_lo32);
+			int ret = BZ2_bzDecompress (context->bz_stream);
+			LOG ("AFTER:\tnext_in %p, avail_in %d, total_in %d, next_out %p, avail_out %d total_out %d\n",
+					context->bz_stream->next_in,
+					context->bz_stream->avail_in,
+					context->bz_stream->total_in_lo32,
+					context->bz_stream->next_out,
+					context->bz_stream->avail_out,
+					context->bz_stream->total_out_lo32);
+			switch (ret) {
+			case BZ_OK:
+				break;
+			case BZ_STREAM_END:
+				LOG ("End of bz stream\n");
+				BZ2_bzDecompressEnd (context->bz_stream);
+				//FIXME set the filetype to CLOSED
+				break;
+			default:
+				BZ2_bzDecompressEnd (context->bz_stream);
+				//FIXME set the filetype to CLOSED
+				g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to decompress");
+				return FALSE;
+			}
+
+			int total_out = 65536 - context->bz_stream->avail_out;
+			LOG ("Wrote %d to file %s\n", total_out, context->tempname);
+			if (fwrite (outbuf, sizeof (guchar), total_out, context->file) != total_out) {
+				gint save_errno = errno;
+				g_set_error_literal (error,
+						     G_FILE_ERROR,
+						     g_file_error_from_errno (save_errno),
+						     "Failed to write to temporary file when loading Xcf image");
+				return FALSE;
+			}
+		}
+		break;
+	case FILETYPE_XCF:
+	default:
+		if (fwrite (buf, sizeof (guchar), size, context->file) != size) {
+			gint save_errno = errno;
+			g_set_error_literal (error,
+					     G_FILE_ERROR,
+					     g_file_error_from_errno (save_errno),
+					     "Failed to write to temporary file when loading Xcf image");
+			return FALSE;
+		}
+		break;
+	}
+
 	return TRUE;	
 }
 
