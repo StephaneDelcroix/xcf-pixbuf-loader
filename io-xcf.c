@@ -1168,7 +1168,91 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 static GdkPixbuf*
 xcf_image_load (FILE *f, GError **error)
 {
-	return xcf_image_load_real (f, NULL, error);
+	guchar buffer[4];
+	fread (buffer, sizeof(guchar), 4, f);
+	rewind (f);
+	if (!strncmp (buffer, "BZh", 3)) { //Decompress the xcf.bz2 file to a temp file
+		gchar *tempname;
+		gint fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &tempname, NULL);
+		if (fd < 0) {
+			gint save_errno = errno;
+			g_set_error_literal (error,
+					G_FILE_ERROR,
+					g_file_error_from_errno (save_errno),
+					"Failed to create temporary file when loading Xcf image");
+			return NULL;
+		}		
+
+		FILE *file = fdopen (fd, "w+");
+		if (!file) {
+			gint save_errno = errno;
+			g_set_error_literal (error,
+					G_FILE_ERROR,
+					g_file_error_from_errno (save_errno),
+					"Failed to open temporary file when loading Xcf image");
+			g_free (tempname);
+			return NULL;
+		}
+
+		int bzerror;
+		BZFILE *b = BZ2_bzReadOpen (&bzerror, f, 0, 0, NULL, 0);
+		if (bzerror != BZ_OK) {
+			BZ2_bzReadClose (&bzerror, b);
+			fclose (file);
+			g_unlink (tempname);
+			g_free (tempname);
+			g_set_error_literal (error,
+					GDK_PIXBUF_ERROR,
+					GDK_PIXBUF_ERROR_FAILED,
+					"Failed to initialize bz2 decompressor");
+			return NULL;
+		}
+
+		bzerror = BZ_OK;
+		gchar buf [65536];
+		gint nBuf;
+		while (bzerror == BZ_OK) {
+			nBuf = BZ2_bzRead (&bzerror, b, buf, 65536);
+			if (bzerror == BZ_OK || bzerror == BZ_STREAM_END)
+				if (fwrite (buf, sizeof (guchar), nBuf, file) != nBuf) {
+					gint save_errno = errno;
+					g_set_error_literal (error,
+							     G_FILE_ERROR,
+							     g_file_error_from_errno (save_errno),
+							     "Failed to write to temporary file when loading Xcf image");
+					BZ2_bzReadClose (&bzerror, b);
+					fclose (file);
+					g_unlink (tempname);
+					g_free (tempname);
+					return NULL;
+				}
+		}
+
+		if (bzerror != BZ_STREAM_END) {
+			LOG ("bzerror = %d\n", bzerror);
+			BZ2_bzReadClose (&bzerror, b);
+			fclose (file);
+			g_unlink (tempname);
+			g_free (tempname);
+			g_set_error_literal (error,
+					GDK_PIXBUF_ERROR,
+					GDK_PIXBUF_ERROR_FAILED,
+					"Decompression error while loading Xcf.bz2 file");
+			return NULL;	
+		} else {
+			LOG ("bzerror = %d\n", bzerror);
+			BZ2_bzReadClose (&bzerror, b);
+		}
+
+		fflush (file);
+		rewind (file);
+		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
+		fclose (file);
+		g_unlink (tempname);
+		g_free (tempname);
+		return pixbuf;
+	} else
+		return xcf_image_load_real (f, NULL, error);
 }
 
 
