@@ -40,7 +40,6 @@
 
 #include <gmodule.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
-#include <gdk-pixbuf/gdk-pixbuf-io.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
