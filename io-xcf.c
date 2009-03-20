@@ -296,6 +296,9 @@ intersect_tile (guchar* ptr, int im_width, int im_height, int *ox, int *oy, int 
 
 void blend (guchar* rgba0, guchar* rgba1)
 {
+	if (rgba0[3] == 0 && rgba1[3] == 0)
+		return;
+
 	guchar k = 0xff * rgba1[3] / (0xff - (0xff-rgba0[3])*(0xff-rgba1[3])/0xff);
 	rgba0[0] = ((0xff - k) * rgba0[0] + k * rgba1[0]) / 0xff;
 	rgba0[1] = ((0xff - k) * rgba0[1] + k * rgba1[1]) / 0xff;
