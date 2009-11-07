@@ -1378,6 +1378,8 @@ xcf_image_load_increment (gpointer data,
 			int ret = BZ2_bzDecompressInit (context->bz_stream, 0, 0); //Verbosity = 0, don't optimize for memory usage
 			if (ret != BZ_OK) {
 				g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to initialize bz2 decompressor");
+				g_free(context->bz_stream);
+				context->bz_stream = NULL;
 				return FALSE;
 			}
 
@@ -1407,6 +1409,11 @@ xcf_image_load_increment (gpointer data,
 				BZ2_bzDecompressEnd (context->bz_stream);
 				context->type = FILETYPE_STREAMCLOSED;
 				g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to decompress");
+				g_free(outbuf);
+				context->bz_stream->next_out = NULL;
+				outbuf = NULL;
+				g_free(context->bz_stream);
+				context->bz_stream = NULL;
 				return FALSE;
 			}
 
@@ -1418,8 +1425,21 @@ xcf_image_load_increment (gpointer data,
 						     G_FILE_ERROR,
 						     g_file_error_from_errno (save_errno),
 						     "Failed to write to temporary file when loading Xcf image");
+				g_free(outbuf);
+				context->bz_stream->next_out = NULL;
+				outbuf = NULL;
+				g_free(context->bz_stream);
+				context->bz_stream = NULL;
 				return FALSE;
 			}
+		}
+		g_free(outbuf);
+		context->bz_stream->next_out = NULL;
+		outbuf = NULL;
+		if (context->type == FILETYPE_STREAMCLOSED)
+		{
+		   g_free(context->bz_stream);
+		   context->bz_stream = NULL;
 		}
 		break;
 	case FILETYPE_XCF:
