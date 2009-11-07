@@ -6,7 +6,7 @@
  *
  * Copyright (C) 2009 Novell, Inc
  *
- * This is a clean room implementation, based solely on  
+ * This is a clean room implementation, based solely on
  * http://henning.makholm.net/xcftools/xcfspec.txt and hexdumps
  * of existing .xcf files.
  *
@@ -174,7 +174,7 @@ rle_decode (FILE *f, gchar *ptr, int count, int type)
 			if (opcode <= 126) {
 				fread (buffer, 1, 1, f);
 				opcode ++;
-				while (opcode --) 
+				while (opcode --)
 					memcpy (ch[channel] + (pixels_count++), buffer, 1);
 			} else if (opcode == 127) {
 				fread (buffer, 3, 1, f);
@@ -191,7 +191,7 @@ rle_decode (FILE *f, gchar *ptr, int count, int type)
 				pixels_count += p*256+q;
 			} else if (opcode >= 129) {
 				fread (ch[channel] + pixels_count, 256 - opcode, 1, f);
-				pixels_count += 256 - opcode;	
+				pixels_count += 256 - opcode;
 			}
 		}
 	}
@@ -224,7 +224,7 @@ to_rgba (gchar *ptr, int count, int type)
 			memcpy (ptr + 4*i + 2, ptr + i, 1);
 			ptr[4*i + 3] = 0xff;
 			break;
-		case LAYERTYPE_GRAYSCALEA: 
+		case LAYERTYPE_GRAYSCALEA:
 			memcpy (ptr + 4*i, ptr + i, 1);
 			memcpy (ptr + 4*i + 1, ptr + i, 1);
 			memcpy (ptr + 4*i + 2, ptr + i, 1);
@@ -246,7 +246,7 @@ apply_mask (FILE *f, gchar compression, guchar *ptr, int size, XcfChannel *mask,
 {
 	//save file position
 	long pos = ftell (f);
-	
+
 	guint32 tptr = mask->lptr + (2 + tile_id) * sizeof(guint32); //skip width and height
 	fseek (f, tptr, SEEK_SET);
 	fread (&tptr, sizeof(guint32), 1, f);
@@ -302,7 +302,7 @@ void blend (guchar* rgba0, guchar* rgba1)
 	guchar k = 0xff * rgba1[3] / (0xff - (0xff-rgba0[3])*(0xff-rgba1[3])/0xff);
 	rgba0[0] = ((0xff - k) * rgba0[0] + k * rgba1[0]) / 0xff;
 	rgba0[1] = ((0xff - k) * rgba0[1] + k * rgba1[1]) / 0xff;
-	rgba0[2] = ((0xff - k) * rgba0[2] + k * rgba1[2]) / 0xff;	
+	rgba0[2] = ((0xff - k) * rgba0[2] + k * rgba1[2]) / 0xff;
 }
 
 typedef void (*composite_func) (guchar* rgb0, guchar* rgb1);
@@ -416,7 +416,7 @@ softlight(guchar *rgb0, guchar *rgb1)
 	rgb1[0] = ((0xff - rgb0[0]) * rgb0[0] * rgb1[0] / 0xff + rgb0[0] * (0xff - (0xff - rgb1[0]) * (0xff - rgb0[0]) / 0x100)) / 0x100;
 	rgb1[1] = ((0xff - rgb0[1]) * rgb0[1] * rgb1[1] / 0xff + rgb0[1] * (0xff - (0xff - rgb1[1]) * (0xff - rgb0[1]) / 0x100)) / 0x100;
 	rgb1[2] = ((0xff - rgb0[2]) * rgb0[2] * rgb1[2] / 0xff + rgb0[2] * (0xff - (0xff - rgb1[2]) * (0xff - rgb0[2]) / 0x100)) / 0x100;
-	//LOG ("(%d %d %d)\n", rgb1[0], rgb1[1], rgb1[2]);	
+	//LOG ("(%d %d %d)\n", rgb1[0], rgb1[1], rgb1[2]);
 }
 
 void
@@ -489,7 +489,7 @@ saturation (guchar *rgb0, guchar *rgb1)
 	rgb1[0] = (guchar)(rgb0[0] * p + q);
 	rgb1[1] = (guchar)(rgb0[1] * p + q);
 	rgb1[2] = (guchar)(rgb0[2] * p + q);
-	
+
 }
 
 void
@@ -784,7 +784,7 @@ composite (gchar *pixbuf_pixels, int rowstride, gchar *tile_pixels, int ox, int 
 				blend (dest, src);
 			}
 		break;
-	
+
 	default:	//Pack layer on top of each other, without any blending at all
 		for (j=0; j<th;j++) {
 			memcpy (pixbuf_pixels + origin + j * rowstride, tile_pixels + j*tw*4 , tw*4);
@@ -822,7 +822,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		return NULL;
 	}
 	fread (buffer, sizeof(guchar), 1, f);
-	
+
 	//Canvas size and Color mode
 	fread (data, sizeof(guint32), 3, f);
 
@@ -836,7 +836,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 
 	LOG ("W: %d, H: %d, mode: %d\n", width, height, color_mode);
-		
+
 	//Image Properties
 	while (1) {
 		fread (property, sizeof(guint32), 2, f); //read property and payload
@@ -889,7 +889,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		long pos = ftell (f);
 		//jump to the layer
 		fseek(f, layer_ptr, SEEK_SET);
-		
+
 		//layer width, height, type
 		fread (data, sizeof(guint32), 3, f);
 		layer->width = SWAP(data[0]);
@@ -979,7 +979,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		//rewind to the previous position
 		fseek (f, pos, SEEK_SET);
 
-		
+
 		if (!ignore_layer)
 			layers = g_list_prepend (layers, layer); //prepend so the layers are in a bottom-up order in the list
 		else {
@@ -989,7 +989,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 		if (!layer->apply_mask || !mptr)
 			continue;
-		
+
 		LOG ("\t\tthis layer has a mask\n");
 		XcfChannel *mask = g_try_new (XcfChannel, 1);
 		if (!mask) {
@@ -1088,7 +1088,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		g_set_error (error,
 				     GDK_PIXBUF_ERROR,
 				     GDK_PIXBUF_ERROR_INSUFFICIENT_MEMORY,
-				     "Cannot allocate memory for loading XCF image");	
+				     "Cannot allocate memory for loading XCF image");
 
 	gdk_pixbuf_fill (pixbuf, 0x00000000);
 
@@ -1159,13 +1159,13 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 			//reduce the tile to its intersection with the canvas
 			intersect_tile (pixels, width, height, &ox, &oy, &tw, &th);
-			
+
 			//apply layer opacity
 			apply_opacity (pixels, tw*th, layer->opacity);
 
 			//composite
 			composite (pixs, rowstride, pixels, ox, oy, tw, th, layer->mode);
-			
+
 			//notify
 			if (context && context->update_func)
 				(* context->update_func) (pixbuf, ox, oy, tw, th, context->user_data);
@@ -1205,7 +1205,7 @@ xcf_image_load (FILE *f, GError **error)
 					g_file_error_from_errno (save_errno),
 					"Failed to create temporary file when loading Xcf image");
 			return NULL;
-		}		
+		}
 
 		FILE *file = fdopen (fd, "w+");
 		if (!file) {
@@ -1262,7 +1262,7 @@ xcf_image_load (FILE *f, GError **error)
 					GDK_PIXBUF_ERROR,
 					GDK_PIXBUF_ERROR_FAILED,
 					"Decompression error while loading Xcf.bz2 file");
-			return NULL;	
+			return NULL;
 		} else {
 			LOG ("bzerror = %d\n", bzerror);
 			BZ2_bzReadClose (&bzerror, b);
@@ -1282,7 +1282,7 @@ xcf_image_load (FILE *f, GError **error)
 
 /* Progressive loader */
 
-/* 
+/*
  * as the layers are packed top down in the xcf format, and we have to render them bottom-up,
  * we need the full file loaded to start rendering
  */
@@ -1307,7 +1307,7 @@ xcf_image_begin_load (GdkPixbufModuleSizeFunc size_func,
 	context->bz_stream = NULL;
 
 	fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &context->tempname, NULL);
-	
+
 	if (fd < 0) {
 		g_free (context);
 		return NULL;
@@ -1434,7 +1434,7 @@ xcf_image_load_increment (gpointer data,
 		break;
 	}
 
-	return TRUE;	
+	return TRUE;
 }
 
 
