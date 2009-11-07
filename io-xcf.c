@@ -812,13 +812,13 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 	fread (buffer, sizeof(guchar), 9, f);
 	//LOG ("%s\n", buffer);
 	if (strncmp (buffer, "gimp xcf ", 9)) {
-		g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_CORRUPT_IMAGE, "Wrong magic");
+		g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_CORRUPT_IMAGE, "Wrong magic");
 		return NULL;
 	}
 
 	fread (buffer, sizeof(guchar), 4, f);
 	if (strncmp (buffer, "file", 4) && strncmp (buffer, "v001", 4) && strncmp (buffer, "v002", 4)) {
-		g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE, "Unsupported version");
+		g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE, "Unsupported version");
 		return NULL;
 	}
 	fread (buffer, sizeof(guchar), 1, f);
@@ -830,7 +830,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 	height = SWAP(data[1]);
 	color_mode = SWAP(data[2]);
 	if (color_mode == 2) { //Indexed, not supported for now
-		g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE, "Indexed color mode unsupported");
+		g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE, "Indexed color mode unsupported");
 		return NULL;
 	}
 
@@ -869,7 +869,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 		XcfLayer *layer = g_try_new (XcfLayer, 1);
 		if (!layer) {
-			g_set_error_literal (error,
+			g_set_error (error,
 			     GDK_PIXBUF_ERROR,
 			     GDK_PIXBUF_ERROR_INSUFFICIENT_MEMORY,
 			     "Cannot allocate memory for loading XCF image");
@@ -993,7 +993,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		LOG ("\t\tthis layer has a mask\n");
 		XcfChannel *mask = g_try_new (XcfChannel, 1);
 		if (!mask) {
-			g_set_error_literal (error,
+			g_set_error (error,
 			     GDK_PIXBUF_ERROR,
 			     GDK_PIXBUF_ERROR_INSUFFICIENT_MEMORY,
 			     "Cannot allocate memory for loading XCF image");
@@ -1085,7 +1085,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		(* context->prepare_func) (pixbuf, NULL, context->user_data);
 
 	if (!pixbuf)
-		g_set_error_literal (error,
+		g_set_error (error,
 				     GDK_PIXBUF_ERROR,
 				     GDK_PIXBUF_ERROR_INSUFFICIENT_MEMORY,
 				     "Cannot allocate memory for loading XCF image");	
@@ -1200,7 +1200,7 @@ xcf_image_load (FILE *f, GError **error)
 		gint fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &tempname, NULL);
 		if (fd < 0) {
 			gint save_errno = errno;
-			g_set_error_literal (error,
+			g_set_error (error,
 					G_FILE_ERROR,
 					g_file_error_from_errno (save_errno),
 					"Failed to create temporary file when loading Xcf image");
@@ -1210,7 +1210,7 @@ xcf_image_load (FILE *f, GError **error)
 		FILE *file = fdopen (fd, "w+");
 		if (!file) {
 			gint save_errno = errno;
-			g_set_error_literal (error,
+			g_set_error (error,
 					G_FILE_ERROR,
 					g_file_error_from_errno (save_errno),
 					"Failed to open temporary file when loading Xcf image");
@@ -1225,7 +1225,7 @@ xcf_image_load (FILE *f, GError **error)
 			fclose (file);
 			g_unlink (tempname);
 			g_free (tempname);
-			g_set_error_literal (error,
+			g_set_error (error,
 					GDK_PIXBUF_ERROR,
 					GDK_PIXBUF_ERROR_FAILED,
 					"Failed to initialize bz2 decompressor");
@@ -1240,7 +1240,7 @@ xcf_image_load (FILE *f, GError **error)
 			if (bzerror == BZ_OK || bzerror == BZ_STREAM_END)
 				if (fwrite (buf, sizeof (guchar), nBuf, file) != nBuf) {
 					gint save_errno = errno;
-					g_set_error_literal (error,
+					g_set_error (error,
 							     G_FILE_ERROR,
 							     g_file_error_from_errno (save_errno),
 							     "Failed to write to temporary file when loading Xcf image");
@@ -1258,7 +1258,7 @@ xcf_image_load (FILE *f, GError **error)
 			fclose (file);
 			g_unlink (tempname);
 			g_free (tempname);
-			g_set_error_literal (error,
+			g_set_error (error,
 					GDK_PIXBUF_ERROR,
 					GDK_PIXBUF_ERROR_FAILED,
 					"Decompression error while loading Xcf.bz2 file");
@@ -1358,7 +1358,7 @@ xcf_image_load_increment (gpointer data,
 	XcfContext *context = (XcfContext*) data;
 
 	if (context->type == FILETYPE_STREAMCLOSED) { //end of compressed stream reached
-		g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_CORRUPT_IMAGE, "end of compressed stream reached before the end of the file");
+		g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_CORRUPT_IMAGE, "end of compressed stream reached before the end of the file");
 		return FALSE;
 	}
 
@@ -1376,7 +1376,7 @@ xcf_image_load_increment (gpointer data,
 
 			int ret = BZ2_bzDecompressInit (context->bz_stream, 0, 0); //Verbosity = 0, don't optimize for memory usage
 			if (ret != BZ_OK) {
-				g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to initialize bz2 decompressor");
+				g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to initialize bz2 decompressor");
 				return FALSE;
 			}
 
@@ -1405,7 +1405,7 @@ xcf_image_load_increment (gpointer data,
 			default:
 				BZ2_bzDecompressEnd (context->bz_stream);
 				context->type = FILETYPE_STREAMCLOSED;
-				g_set_error_literal (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to decompress");
+				g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED, "Failed to decompress");
 				return FALSE;
 			}
 
@@ -1413,7 +1413,7 @@ xcf_image_load_increment (gpointer data,
 			LOG ("Wrote %d to file %s\n", total_out, context->tempname);
 			if (fwrite (outbuf, sizeof (guchar), total_out, context->file) != total_out) {
 				gint save_errno = errno;
-				g_set_error_literal (error,
+				g_set_error (error,
 						     G_FILE_ERROR,
 						     g_file_error_from_errno (save_errno),
 						     "Failed to write to temporary file when loading Xcf image");
@@ -1425,7 +1425,7 @@ xcf_image_load_increment (gpointer data,
 	default:
 		if (fwrite (buf, sizeof (guchar), size, context->file) != size) {
 			gint save_errno = errno;
-			g_set_error_literal (error,
+			g_set_error (error,
 					     G_FILE_ERROR,
 					     g_file_error_from_errno (save_errno),
 					     "Failed to write to temporary file when loading Xcf image");
