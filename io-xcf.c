@@ -46,7 +46,8 @@
 #include <errno.h>
 #include <bzlib.h>
 
-#define LOG(...) printf (__VA_ARGS__);
+//#define LOG(...) printf (__VA_ARGS__);
+#define LOG(...)
 
 //FIXME: change this macro to noop on bigendian machines
 #define SWAP(int32) ( ((int32) >> 24) + \
