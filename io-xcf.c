@@ -49,12 +49,6 @@
 //#define LOG(...) printf (__VA_ARGS__);
 #define LOG(...)
 
-//FIXME: change this macro to noop on bigendian machines
-#define SWAP(int32) ( ((int32) >> 24) + \
-		      ((int32) >> 8 & 0x0000FF00 )+ \
-		      ((int32) << 8 & 0x00FF0000 )+ \
-		      ((int32) << 24) )
-
 #define PROP_END 		0
 #define PROP_COLORMAP 		1
 #define PROP_FLOATING_SELECTION	5
@@ -251,7 +245,7 @@ apply_mask (FILE *f, gchar compression, guchar *ptr, int size, XcfChannel *mask,
 	guint32 tptr = mask->lptr + (2 + tile_id) * sizeof(guint32); //skip width and height
 	fseek (f, tptr, SEEK_SET);
 	fread (&tptr, sizeof(guint32), 1, f);
-	fseek (f, SWAP(tptr), SEEK_SET);
+	fseek (f, GUINT32_FROM_BE(tptr), SEEK_SET);
 
 	gchar pixels[4096];
 	if (compression == COMPRESSION_RLE)
@@ -827,9 +821,9 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 	//Canvas size and Color mode
 	fread (data, sizeof(guint32), 3, f);
 
-	width = SWAP(data[0]);
-	height = SWAP(data[1]);
-	color_mode = SWAP(data[2]);
+	width = GUINT32_FROM_BE(data[0]);
+	height = GUINT32_FROM_BE(data[1]);
+	color_mode = GUINT32_FROM_BE(data[2]);
 	if (color_mode == 2) { //Indexed, not supported for now
 		g_set_error (error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE, "Indexed color mode unsupported");
 		return NULL;
@@ -843,8 +837,8 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		fread (property, sizeof(guint32), 2, f); //read property and payload
 		if (!property[0])
 			break;
-		property[0] = SWAP(property[0]);
-		property[1] = SWAP(property[1]);
+		property[0] = GUINT32_FROM_BE(property[0]);
+		property[1] = GUINT32_FROM_BE(property[1]);
 		//LOG ("property %d, payload %d\n", property[0], property[1]);
 		switch (property[0]) {
 		case PROP_COMPRESSION:
@@ -864,7 +858,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 	guint32 layer_ptr;
 	while (1) {
 		fread (&layer_ptr, sizeof(guint32), 1, f);
-		layer_ptr = SWAP (layer_ptr);
+		layer_ptr = GUINT32_FROM_BE (layer_ptr);
 		if (!layer_ptr)
 			break;;
 
@@ -893,49 +887,49 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 		//layer width, height, type
 		fread (data, sizeof(guint32), 3, f);
-		layer->width = SWAP(data[0]);
-		layer->height = SWAP(data[1]);
-		layer->type = SWAP(data[2]);
+		layer->width = GUINT32_FROM_BE(data[0]);
+		layer->height = GUINT32_FROM_BE(data[1]);
+		layer->type = GUINT32_FROM_BE(data[2]);
 		LOG("\tLayer w:%d h:%d type:%d\n", layer->width, layer->height, layer->type);
 
 		//Layer name, ignore
 		guint32 string_size;
 		fread (&string_size, sizeof(guint32), 1, f);
-		fseek (f, SWAP(string_size), SEEK_CUR);
+		fseek (f, GUINT32_FROM_BE(string_size), SEEK_CUR);
 
 		//Layer properties
 		while (1) {
 			fread (property, sizeof(guint32), 2, f); //property and payload
 			if (!property[0])
 				break;		//break on PROP_END
-			property[0] = SWAP (property[0]);
-			property[1] = SWAP (property[1]);
+			property[0] = GUINT32_FROM_BE (property[0]);
+			property[1] = GUINT32_FROM_BE (property[1]);
 			//LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
 			switch (property[0]) {
 			case PROP_OPACITY:
 				fread (data, sizeof(guint32), 1, f);
-				layer->opacity = SWAP(data[0]);
+				layer->opacity = GUINT32_FROM_BE(data[0]);
 				break;
 			case PROP_MODE:
 				fread (data, sizeof(guint32), 1, f);
-				layer->mode = SWAP (data[0]);
+				layer->mode = GUINT32_FROM_BE (data[0]);
 				break;
 			case PROP_VISIBLE:
 				fread (data, sizeof(guint32), 1, f);
-				if (SWAP(data[0]) == 0) {
+				if (GUINT32_FROM_BE(data[0]) == 0) {
 					layer->visible = FALSE;
 					ignore_layer = TRUE;
 				}
 				break;
 			case PROP_APPLY_MASK:
 				fread (data, sizeof(guint32), 1, f);
-				if (SWAP(data[0]) == 1)
+				if (GUINT32_FROM_BE(data[0]) == 1)
 					layer->apply_mask = TRUE;
 				break;
 			case PROP_OFFSETS:
 				fread(data, sizeof(gint32), 2, f);
-				layer->dx = SWAP(data[0]);
-				layer->dy = SWAP(data[1]);
+				layer->dx = GUINT32_FROM_BE(data[0]);
+				layer->dy = GUINT32_FROM_BE(data[1]);
 				break;
 			case PROP_FLOATING_SELECTION:
 				ignore_layer = TRUE;
@@ -949,21 +943,21 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		//Hierararchy Pointer
 		guint32 hptr;
 		fread (&hptr, sizeof(guint32), 1, f);
-		hptr = SWAP (hptr);
+		hptr = GUINT32_FROM_BE (hptr);
 		long pos1 = ftell (f);
 		//jump to hierarchy
 		fseek (f, hptr, SEEK_SET);
 
 		//Hierarchy w, h, bpp
 		fread (data, sizeof(guint32), 3, f);
-		data[0] = SWAP(data[0]);
-		data[1] = SWAP(data[1]);
-		data[2] = SWAP(data[2]);
+		data[0] = GUINT32_FROM_BE(data[0]);
+		data[1] = GUINT32_FROM_BE(data[1]);
+		data[2] = GUINT32_FROM_BE(data[2]);
 		//LOG ("\tHierarchy w:%d, h:%d, bpp:%d\n", data[0], data[1], data[2]);
 
 		guint32 lptr;
 		fread (&lptr, sizeof(guint32), 1, f);
-		layer->lptr = SWAP (lptr);
+		layer->lptr = GUINT32_FROM_BE (lptr);
 		//Layer parsing is done at rendering time
 
 		//Here I could iterate over the unused dlevels and skip them
@@ -975,7 +969,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		guint32 mptr;
 		fread (&mptr, sizeof(guint32), 1, f);
 		if (mptr)
-			mptr = SWAP(mptr);
+			mptr = GUINT32_FROM_BE(mptr);
 
 		//rewind to the previous position
 		fseek (f, pos, SEEK_SET);
@@ -1011,30 +1005,30 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 		//Channel w, h
 		fread (data, sizeof(guint32), 2, f);
-		data[0] = SWAP(data[0]);
-		data[1] = SWAP(data[1]);
+		data[0] = GUINT32_FROM_BE(data[0]);
+		data[1] = GUINT32_FROM_BE(data[1]);
 		LOG ("\t\tChannel w:%d, h:%d\n", data[0], data[1]);
 
 		//Channel name, ignore
 		fread (&string_size, sizeof(guint32), 1, f);
-		fseek (f, SWAP(string_size), SEEK_CUR);
+		fseek (f, GUINT32_FROM_BE(string_size), SEEK_CUR);
 
 		//Channel properties
 		while (1) {
 			fread (property, sizeof(guint32), 2, f); //property and payload
 			if (!property[0])
 				break;		//break on PROP_END
-			property[0] = SWAP (property[0]);
-			property[1] = SWAP (property[1]);
+			property[0] = GUINT32_FROM_BE (property[0]);
+			property[1] = GUINT32_FROM_BE (property[1]);
 			//LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
 			switch (property[0]) {
 			case PROP_OPACITY:
 				fread (data, sizeof(guint32), 1, f);
-				mask->opacity = SWAP(data[0]);
+				mask->opacity = GUINT32_FROM_BE(data[0]);
 				break;
 			case PROP_VISIBLE:
 				fread (data, sizeof(guint32), 1, f);
-				if (SWAP(data[0]) == 0)
+				if (GUINT32_FROM_BE(data[0]) == 0)
 					mask->visible = FALSE;
 				break;
 			default:
@@ -1046,20 +1040,20 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 
 		//Hierararchy Pointer
 		fread (&hptr, sizeof(guint32), 1, f);
-		hptr = SWAP (hptr);
+		hptr = GUINT32_FROM_BE (hptr);
 		long mpos1 = ftell (f);
 		//jump to hierarchy
 		fseek (f, hptr, SEEK_SET);
 
 		//Hierarchy w, h, bpp
 		fread (data, sizeof(guint32), 3, f);
-		data[0] = SWAP(data[0]);
-		data[1] = SWAP(data[1]);
-		data[2] = SWAP(data[2]);
+		data[0] = GUINT32_FROM_BE(data[0]);
+		data[1] = GUINT32_FROM_BE(data[1]);
+		data[2] = GUINT32_FROM_BE(data[2]);
 		//LOG ("\tHierarchy w:%d, h:%d, bpp:%d\n", data[0], data[1], data[2]);
 
 		fread (&lptr, sizeof(guint32), 1, f);
-		mask->lptr = SWAP (lptr);
+		mask->lptr = GUINT32_FROM_BE (lptr);
 		//level parsing is done at render time
 
 		if (mask->visible)
@@ -1116,7 +1110,7 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			fread (&tptr, sizeof(guint32), 1, f);
 			if (!tptr)
 				break;
-			tptr = SWAP(tptr);
+			tptr = GUINT32_FROM_BE(tptr);
 			long lpos = ftell (f);
 			fseek (f, tptr, SEEK_SET);
 
