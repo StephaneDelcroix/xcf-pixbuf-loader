@@ -43,6 +43,7 @@
 #include <gio/gio.h>
 #include <gio/gzlibcompressor.h>
 #include <gio/gunixinputstream.h>
+#include <gio/gunixoutputstream.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -1271,10 +1272,11 @@ xcf_image_load (FILE *f, GError **error)
 
 		fflush (file);
 		rewind (file);
-		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
-		fclose (file);
 		g_unlink (tempname);
 		g_free (tempname);
+
+		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
+		fclose (file);
 		return pixbuf;
 	} else if (!strncmp (buffer, "\x1f\x8b", 2)) { //Decompress the .gz to a temp file
 		GZlibDecompressor *compressor;
@@ -1296,6 +1298,7 @@ xcf_image_load (FILE *f, GError **error)
 					"Failed to create temporary file when loading Xcf image");
 			return NULL;
 		}
+		GOutputStream *output;
 		output = g_unix_output_stream_new (fd, TRUE);
 		if (!g_output_stream_splice (G_OUTPUT_STREAM (output), stream,
 					     G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE | G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET,
@@ -1310,10 +1313,11 @@ xcf_image_load (FILE *f, GError **error)
 
 		FILE *file;
 		file = fopen (tempname, "r");
-		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
-		fclose (file);
 		g_unlink (tempname);
 		g_free (tempname);
+
+		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
+		fclose (file);
 
 		return pixbuf;
 	} else
@@ -1379,6 +1383,11 @@ xcf_image_stop_load (gpointer data, GError **error)
 	    context->type == FILETYPE_XCF_BZ2) {
 		fflush (context->file);
 		rewind (context->file);
+		if (context->tempname) {
+			g_unlink (context->tempname);
+			g_free (context->tempname);
+			context->tempname = NULL;
+		}
 		GdkPixbuf *pixbuf = xcf_image_load_real (context->file, context, error);
 		if (!pixbuf)
 			retval = FALSE;
@@ -1408,20 +1417,31 @@ xcf_image_stop_load (gpointer data, GError **error)
 			retval = FALSE;
 			goto bail;
 		}
-		fflush (context->file);
-		rewind (context->file);
-		GdkPixbuf *pixbuf = xcf_image_load_real (context->file, context, error);
-		if (!pixbuf)
-			retval = FALSE;
-		else
-			g_object_unref (pixbuf);
+	} else {
+		g_assert_not_reached ();
 	}
+
+	fflush (context->file);
+	rewind (context->file);
+	if (context->tempname) {
+		g_unlink (context->tempname);
+		g_free (context->tempname);
+		context->tempname = NULL;
+	}
+	GdkPixbuf *pixbuf = xcf_image_load_real (context->file, context, error);
+	if (!pixbuf)
+		retval = FALSE;
+	else
+		g_object_unref (pixbuf);
+
 bail:
 	if (context->stream)
 		g_object_unref (context->stream);
 	fclose (context->file);
-	g_unlink (context->tempname);
-	g_free (context->tempname);
+	if (context->tempname) {
+		g_unlink (context->tempname);
+		g_free (context->tempname);
+	}
 	g_free (context);
 
 	return retval;
