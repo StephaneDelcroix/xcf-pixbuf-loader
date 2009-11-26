@@ -28,8 +28,6 @@
 
 /*
  * TODO:
- * - read xcf.gz, xcf.bz2
- * - fix and test on bigendian machines
  * - fix the spots/stains (where are they coming from) ?
  * - indexed mode
  * - if the bg layer mode is not Normal or Dissolve, change it to Normal
@@ -41,9 +39,11 @@
 #include <gmodule.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gio/gio.h>
+#if GIO_2_23
 #include <gio/gzlibcompressor.h>
 #include <gio/gunixinputstream.h>
 #include <gio/gunixoutputstream.h>
+#endif
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -109,7 +109,9 @@
 #define FILETYPE_UNKNOWN	0
 #define FILETYPE_XCF		1
 #define FILETYPE_XCF_BZ2	2
+#if GIO_2_23
 #define FILETYPE_XCF_GZ		3
+#endif
 
 typedef struct _XcfContext XcfContext;
 struct _XcfContext {
@@ -120,7 +122,9 @@ struct _XcfContext {
 	gint type;
 	bz_stream *bz_stream;
 
+#if GIO_2_23
 	GInputStream *input, *stream;
+#endif
 
 	gchar *tempname;
 	FILE *file;
@@ -1278,6 +1282,7 @@ xcf_image_load (FILE *f, GError **error)
 		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
 		fclose (file);
 		return pixbuf;
+#if GIO_2_23
 	} else if (!strncmp (buffer, "\x1f\x8b", 2)) { //Decompress the .gz to a temp file
 		GZlibDecompressor *compressor;
 		GInputStream *input, *stream;
@@ -1320,6 +1325,7 @@ xcf_image_load (FILE *f, GError **error)
 		fclose (file);
 
 		return pixbuf;
+#endif
 	} else
 		return xcf_image_load_real (f, NULL, error);
 }
@@ -1350,8 +1356,10 @@ xcf_image_begin_load (GdkPixbufModuleSizeFunc size_func,
 	context->user_data = user_data;
 	context->type = FILETYPE_UNKNOWN;
 	context->bz_stream = NULL;
+#if GIO_2_23
 	context->stream = NULL;
 	context->input = NULL;
+#endif
 
 	fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &context->tempname, NULL);
 
@@ -1393,6 +1401,7 @@ xcf_image_stop_load (gpointer data, GError **error)
 			retval = FALSE;
 		else
 			g_object_unref (pixbuf);
+#if GIO_2_23
 	} else if (context->type == FILETYPE_XCF_GZ) {
 		g_object_unref (context->input);
 		context->input = NULL;
@@ -1417,6 +1426,7 @@ xcf_image_stop_load (gpointer data, GError **error)
 			retval = FALSE;
 			goto bail;
 		}
+#endif
 	} else {
 		g_assert_not_reached ();
 	}
@@ -1435,8 +1445,10 @@ xcf_image_stop_load (gpointer data, GError **error)
 		g_object_unref (pixbuf);
 
 bail:
+#if GIO_2_23
 	if (context->stream)
 		g_object_unref (context->stream);
+#endif
 	fclose (context->file);
 	if (context->tempname) {
 		g_unlink (context->tempname);
@@ -1481,9 +1493,8 @@ xcf_image_load_increment (gpointer data,
 				context->bz_stream = NULL;
 				return FALSE;
 			}
-
-		}
-		else if (!strncmp (buf, "\x1f\x8b", 2)) {
+#if GIO_2_23
+		} else if (!strncmp (buf, "\x1f\x8b", 2)) {
 			GZlibDecompressor *compressor;
 
 			context->type = FILETYPE_XCF_GZ;
@@ -1492,6 +1503,7 @@ xcf_image_load_increment (gpointer data,
 			context->input = g_memory_input_stream_new ();
 			context->stream = (GInputStream *) g_converter_input_stream_new (context->input, (GConverter *) (compressor));
 			g_object_unref (compressor);
+#endif
 		}
 		LOG ("File type %d\n", context->type);
 	}
@@ -1551,10 +1563,12 @@ xcf_image_load_increment (gpointer data,
 		   context->bz_stream = NULL;
 		}
 		break;
+#if GIO_2_23
 	case FILETYPE_XCF_GZ:
 		g_memory_input_stream_add_data (G_MEMORY_INPUT_STREAM (context->input),
 								       buf, size, NULL);
 		break;
+#endif
 	case FILETYPE_XCF:
 	default:
 		if (fwrite (buf, sizeof (guchar), size, context->file) != size) {
@@ -1586,7 +1600,9 @@ MODULE_ENTRY (fill_info) (GdkPixbufFormat *info)
         static GdkPixbufModulePattern signature[] = {
                 { "gimp xcf", NULL, 100 },
 		{ "BZh", NULL, 80 },
+#if GIO_2_23
 		{ "\x1f\x8b", NULL, 80 },
+#endif
                 { NULL, NULL, 0 }
         };
 	static gchar * mime_types[] = {
@@ -1597,7 +1613,9 @@ MODULE_ENTRY (fill_info) (GdkPixbufFormat *info)
 	static gchar * extensions[] = {
 		"xcf",
 		"xcf.bz2",
+#if GIO_2_23
 		"xcf.gz",
+#endif
 		NULL
 	};
 
