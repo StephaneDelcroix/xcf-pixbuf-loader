@@ -36,13 +36,13 @@
 
 #define GDK_PIXBUF_ENABLE_BACKEND
 
+#include "config.h"
+
 #include <gmodule.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gio/gio.h>
 #if GIO_2_23
-#include <gio/gzlibcompressor.h>
-#include <gio/gunixinputstream.h>
-#include <gio/gunixoutputstream.h>
+#include "yelp-bz2-decompressor.h"
 #endif
 #include <math.h>
 #include <string.h>
@@ -105,13 +105,13 @@
 #define LAYERMODE_GRAINEXTRACT	20
 #define LAYERMODE_GRAINMERGE	21
 
-#define FILETYPE_STREAMCLOSED	-1
-#define FILETYPE_UNKNOWN	0
-#define FILETYPE_XCF		1
-#define FILETYPE_XCF_BZ2	2
-#if GIO_2_23
-#define FILETYPE_XCF_GZ		3
-#endif
+enum {
+	FILETYPE_STREAMCLOSED = -1,
+	FILETYPE_UNKNOWN      = 0,
+	FILETYPE_XCF,
+	FILETYPE_XCF_BZ2,
+	FILETYPE_XCF_GZ
+};
 
 typedef struct _XcfContext XcfContext;
 struct _XcfContext {
@@ -1198,10 +1198,80 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 static GdkPixbuf*
 xcf_image_load (FILE *f, GError **error)
 {
-	guchar buffer[4];
-	fread (buffer, sizeof(guchar), 4, f);
+	guint type;
+
+	guchar buffer[8];
+	fread (buffer, sizeof(guchar), 8, f);
 	rewind (f);
-	if (!strncmp (buffer, "BZh", 3)) { //Decompress the xcf.bz2 file to a temp file
+
+	if (!strncmp (buffer, "BZh", 3)) {
+		type = FILETYPE_XCF_BZ2;
+	} else if (!strncmp (buffer, "\x1f\x8b", 2)) {
+		type = FILETYPE_XCF_GZ;
+	} else if (!strncmp (buffer, "gimp xcf", 8)) {
+		type = FILETYPE_XCF;
+	} else {
+		g_set_error (error,
+			     GDK_PIXBUF_ERROR,
+			     GDK_PIXBUF_ERROR_UNKNOWN_TYPE,
+			     "Unknown XCF file type");
+		return NULL;
+	}
+
+	if (type == FILETYPE_XCF)
+		return xcf_image_load_real (f, NULL, error);
+
+#if GIO_2_23
+	if (type == FILETYPE_XCF_BZ2 ||
+	    type == FILETYPE_XCF_GZ) {
+		GConverter *decompressor;
+		GInputStream *input, *stream;
+
+		if (type == FILETYPE_XCF_BZ2)
+			decompressor = G_CONVERTER (yelp_bz2_decompressor_new ());
+		else
+			decompressor = G_CONVERTER (g_zlib_decompressor_new (G_ZLIB_COMPRESSOR_FORMAT_GZIP));
+		input = g_unix_input_stream_new (fileno (f), FALSE);
+		stream = (GInputStream *) g_converter_input_stream_new (input, decompressor);
+		g_object_unref (decompressor);
+		g_object_unref (input);
+
+		gchar *tempname;
+		gint fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &tempname, NULL);
+		if (fd < 0) {
+			gint save_errno = errno;
+			g_set_error (error,
+					G_FILE_ERROR,
+					g_file_error_from_errno (save_errno),
+					"Failed to create temporary file when loading Xcf image");
+			return NULL;
+		}
+		GOutputStream *output;
+		output = g_unix_output_stream_new (fd, TRUE);
+		if (!g_output_stream_splice (G_OUTPUT_STREAM (output), stream,
+					     G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE | G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET,
+					     NULL, NULL)) {
+			LOG ("splicing failed\n");
+			g_set_error (error,
+				     GDK_PIXBUF_ERROR,
+				     GDK_PIXBUF_ERROR_FAILED,
+				     "Decompression error while loading Xcf.gz file");
+			return NULL;
+		}
+
+		FILE *file;
+		file = fopen (tempname, "r");
+		g_unlink (tempname);
+		g_free (tempname);
+
+		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
+		fclose (file);
+
+		return pixbuf;
+	}
+#else
+	/* Decompress the xcf.bz2 file to a temp file */
+	if (type == FILETYPE_XCF_BZ2) {
 		gchar *tempname;
 		gint fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &tempname, NULL);
 		if (fd < 0) {
@@ -1282,52 +1352,13 @@ xcf_image_load (FILE *f, GError **error)
 		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
 		fclose (file);
 		return pixbuf;
-#if GIO_2_23
-	} else if (!strncmp (buffer, "\x1f\x8b", 2)) { //Decompress the .gz to a temp file
-		GZlibDecompressor *compressor;
-		GInputStream *input, *stream;
-
-		compressor = g_zlib_decompressor_new (G_ZLIB_COMPRESSOR_FORMAT_GZIP);
-		input = g_unix_input_stream_new (fileno (f), FALSE);
-		stream = (GInputStream *) g_converter_input_stream_new (input, (GConverter *) (compressor));
-		g_object_unref (compressor);
-		g_object_unref (input);
-
-		gchar *tempname;
-		gint fd = g_file_open_tmp ("gdkpixbuf-xcf-tmp.XXXXXX", &tempname, NULL);
-		if (fd < 0) {
-			gint save_errno = errno;
-			g_set_error (error,
-					G_FILE_ERROR,
-					g_file_error_from_errno (save_errno),
-					"Failed to create temporary file when loading Xcf image");
-			return NULL;
-		}
-		GOutputStream *output;
-		output = g_unix_output_stream_new (fd, TRUE);
-		if (!g_output_stream_splice (G_OUTPUT_STREAM (output), stream,
-					     G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE | G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET,
-					     NULL, NULL)) {
-			LOG ("splicing failed\n");
-			g_set_error (error,
-				     GDK_PIXBUF_ERROR,
-				     GDK_PIXBUF_ERROR_FAILED,
-				     "Decompression error while loading Xcf.gz file");
-			return NULL;
-		}
-
-		FILE *file;
-		file = fopen (tempname, "r");
-		g_unlink (tempname);
-		g_free (tempname);
-
-		GdkPixbuf *pixbuf = xcf_image_load_real (file, NULL, error);
-		fclose (file);
-
-		return pixbuf;
+	} else {
+		g_set_error (error,
+			     GDK_PIXBUF_ERROR,
+			     GDK_PIXBUF_ERROR_UNKNOWN_TYPE,
+			     "Unhandled XCF file type");
+	}
 #endif
-	} else
-		return xcf_image_load_real (f, NULL, error);
 }
 
 
@@ -1387,22 +1418,9 @@ xcf_image_stop_load (gpointer data, GError **error)
 
 	g_return_val_if_fail (data, TRUE);
 
-	if (context->type == FILETYPE_XCF ||
-	    context->type == FILETYPE_XCF_BZ2) {
-		fflush (context->file);
-		rewind (context->file);
-		if (context->tempname) {
-			g_unlink (context->tempname);
-			g_free (context->tempname);
-			context->tempname = NULL;
-		}
-		GdkPixbuf *pixbuf = xcf_image_load_real (context->file, context, error);
-		if (!pixbuf)
-			retval = FALSE;
-		else
-			g_object_unref (pixbuf);
 #if GIO_2_23
-	} else if (context->type == FILETYPE_XCF_GZ) {
+	if (context->type == FILETYPE_XCF_GZ ||
+	    context->type == FILETYPE_XCF_BZ2) {
 		g_object_unref (context->input);
 		context->input = NULL;
 
@@ -1426,11 +1444,28 @@ xcf_image_stop_load (gpointer data, GError **error)
 			retval = FALSE;
 			goto bail;
 		}
+		goto done;
+	}
 #endif
+	if (context->type == FILETYPE_XCF ||
+	    context->type == FILETYPE_XCF_BZ2) {
+		fflush (context->file);
+		rewind (context->file);
+		if (context->tempname) {
+			g_unlink (context->tempname);
+			g_free (context->tempname);
+			context->tempname = NULL;
+		}
+		GdkPixbuf *pixbuf = xcf_image_load_real (context->file, context, error);
+		if (!pixbuf)
+			retval = FALSE;
+		else
+			g_object_unref (pixbuf);
 	} else {
 		g_assert_not_reached ();
 	}
 
+done:
 	fflush (context->file);
 	rewind (context->file);
 	if (context->tempname) {
@@ -1475,11 +1510,30 @@ xcf_image_load_increment (gpointer data,
 	}
 
 	if (context->type == FILETYPE_UNKNOWN) { // first chunk
-		if (!strncmp (buf, "gimp xcf ", 9))
+		if (!strncmp (buf, "gimp xcf ", 9)) {
 			context->type = FILETYPE_XCF;
-		else if (!strncmp (buf, "BZh", 3)) {
+		} else if (!strncmp (buf, "BZh", 3)) {
 			context->type = FILETYPE_XCF_BZ2;
+		} else if (!strncmp (buf, "\x1f\x8b", 2)) {
+			context->type = FILETYPE_XCF_GZ;
+		}
 
+#if GIO_2_23
+		if (context->type == FILETYPE_XCF_GZ ||
+		    context->type == FILETYPE_XCF_BZ2) {
+			GConverter *decompressor;
+
+			if (context->type == FILETYPE_XCF_BZ2)
+				decompressor = G_CONVERTER (yelp_bz2_decompressor_new ());
+			else
+				decompressor = G_CONVERTER (g_zlib_decompressor_new (G_ZLIB_COMPRESSOR_FORMAT_GZIP));
+
+			context->input = g_memory_input_stream_new ();
+			context->stream = (GInputStream *) g_converter_input_stream_new (context->input, decompressor);
+			g_object_unref (decompressor);
+		}
+#else
+		if (context->type == FILETYPE_XCF_BZ2) {
 			//Initialize bzlib
 			context->bz_stream = g_new (bz_stream, 1);
 			context->bz_stream->bzalloc = NULL;
@@ -1493,23 +1547,20 @@ xcf_image_load_increment (gpointer data,
 				context->bz_stream = NULL;
 				return FALSE;
 			}
-#if GIO_2_23
-		} else if (!strncmp (buf, "\x1f\x8b", 2)) {
-			GZlibDecompressor *compressor;
-
-			context->type = FILETYPE_XCF_GZ;
-			compressor = g_zlib_decompressor_new (G_ZLIB_COMPRESSOR_FORMAT_GZIP);
-
-			context->input = g_memory_input_stream_new ();
-			context->stream = (GInputStream *) g_converter_input_stream_new (context->input, (GConverter *) (compressor));
-			g_object_unref (compressor);
-#endif
 		}
+#endif
 		LOG ("File type %d\n", context->type);
 	}
 
 	gchar *outbuf;
 	switch (context->type) {
+#if GIO_2_23
+	case FILETYPE_XCF_GZ:
+	case FILETYPE_XCF_BZ2:
+		g_memory_input_stream_add_data (G_MEMORY_INPUT_STREAM (context->input),
+								       buf, size, NULL);
+		break;
+#else
 	case FILETYPE_XCF_BZ2:
 		outbuf = g_new (gchar, 65536);
 		context->bz_stream->next_in = (gchar*)buf;
@@ -1562,11 +1613,6 @@ xcf_image_load_increment (gpointer data,
 		   g_free(context->bz_stream);
 		   context->bz_stream = NULL;
 		}
-		break;
-#if GIO_2_23
-	case FILETYPE_XCF_GZ:
-		g_memory_input_stream_add_data (G_MEMORY_INPUT_STREAM (context->input),
-								       buf, size, NULL);
 		break;
 #endif
 	case FILETYPE_XCF:
