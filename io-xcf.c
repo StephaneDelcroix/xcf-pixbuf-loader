@@ -42,6 +42,8 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gio/gio.h>
 #if GIO_2_23
+#include <gio/gunixoutputstream.h>
+#include <gio/gunixinputstream.h>
 #include "yelp-bz2-decompressor.h"
 #endif
 #include <math.h>
@@ -1426,9 +1428,11 @@ xcf_image_stop_load (gpointer data, GError **error)
 
 		gchar buf [65536];
 		gsize count;
-		GError *err = NULL;
 		while ((count = g_input_stream_read (G_INPUT_STREAM (context->stream),
 						     &buf, sizeof (buf), NULL, error)) > 0) {
+			/* An error on the first run? */
+			if (count == -1)
+				break;
 			if (fwrite (buf, sizeof (gchar), count, context->file) != count) {
 				gint save_errno = errno;
 				g_set_error (error,
@@ -1448,6 +1452,9 @@ xcf_image_stop_load (gpointer data, GError **error)
 	}
 #endif
 	if (context->type == FILETYPE_XCF ||
+#if GIO_2_23
+	    context->type == FILETYPE_XCF_GZ ||
+#endif
 	    context->type == FILETYPE_XCF_BZ2) {
 		fflush (context->file);
 		rewind (context->file);
@@ -1557,7 +1564,6 @@ xcf_image_load_increment (gpointer data,
 		LOG ("File type %d\n", context->type);
 	}
 
-	gchar *outbuf;
 	switch (context->type) {
 #if GIO_2_23
 	case FILETYPE_XCF_GZ:
@@ -1567,6 +1573,7 @@ xcf_image_load_increment (gpointer data,
 		break;
 #else
 	case FILETYPE_XCF_BZ2:
+		gchar *outbuf;
 		outbuf = g_new (gchar, 65536);
 		context->bz_stream->next_in = (gchar*)buf;
 		context->bz_stream->avail_in = size;
