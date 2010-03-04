@@ -73,6 +73,8 @@
 #define PROP_PATHS 		23
 #define PROP_USER_UNIT 		24
 #define PROP_VECTORS		25
+//FIXME Find the real maximum property
+#define PROP_MAX		1000
 
 #define COMPRESSION_NONE	0
 #define COMPRESSION_RLE		1
@@ -853,6 +855,9 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 		property[0] = GUINT32_FROM_BE(property[0]);
 		property[1] = GUINT32_FROM_BE(property[1]);
 		//LOG ("property %d, payload %d\n", property[0], property[1]);
+		/* Probably just a garbage property */
+		if (property[0] > PROP_MAX)
+			break;
 		switch (property[0]) {
 		case PROP_COMPRESSION:
 			fread (&compression, sizeof(gchar), 1, f);
@@ -918,6 +923,9 @@ xcf_image_load_real (FILE *f, XcfContext *context, GError **error)
 			property[0] = GUINT32_FROM_BE (property[0]);
 			property[1] = GUINT32_FROM_BE (property[1]);
 			//LOG ("\tproperty %d, payload %d\n", property[0], property[1]);
+			/* Probably just a garbage property */
+			if (property[0] > PROP_MAX)
+				break;
 			switch (property[0]) {
 			case PROP_OPACITY:
 				fread (data, sizeof(guint32), 1, f);
