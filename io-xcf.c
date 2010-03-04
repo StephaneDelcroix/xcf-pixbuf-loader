@@ -1462,7 +1462,12 @@ xcf_image_stop_load (gpointer data, GError **error)
 		else
 			g_object_unref (pixbuf);
 	} else {
-		g_assert_not_reached ();
+		retval = FALSE;
+		g_set_error (error,
+			     G_FILE_ERROR,
+			     GDK_PIXBUF_ERROR_UNKNOWN_TYPE,
+			     "Gzip XCF support is disabled");
+		goto bail;
 	}
 
 done:
