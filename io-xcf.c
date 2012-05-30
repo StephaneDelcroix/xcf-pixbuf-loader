@@ -283,7 +283,7 @@ intersect_tile (guchar* ptr, int im_width, int im_height, int *ox, int *oy, int 
 	int i;
 	if (*ox < 0) {
 		for (i=0; i<*th; i++) {
-			memmove (ptr + 4 * i * (*tw + *ox), ptr + 4 * i * (*tw), 4 * (*tw + *ox));
+			memmove (ptr + 4 * i * (*tw + *ox), ptr + 4 * ( i * *tw - *ox), 4 * (*tw + *ox));
 		}
 		*tw = *tw + *ox;
 		*ox = 0;
