@@ -1,9 +1,8 @@
+THIS IS AN OLD PIECE OF SOFTWARE. PROBABLY NOT USED ANYWHERE ANYMORE.
+
 io-xcf is a gdk-pixbuf loader for the xcf (The Gimp) files.
 
 build it using make, cp the .so next to the other gdk-pixbuf loaders on your 
 machine, and run gdk-pixbuf-query-loaders
 
 test it with eog (works with 2.24.1) of f-spot (SVN)
-
-there's no ml, no bug tracker, no irc channel for this project, but feel free
-to drop me a mail at stephane@delcroix.org
